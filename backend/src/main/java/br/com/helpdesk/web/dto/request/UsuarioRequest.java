@@ -1,6 +1,7 @@
 package br.com.helpdesk.web.dto.request;
 
 import br.com.helpdesk.domain.enums.Perfil;
+import br.com.helpdesk.service.dto.DadosUsuario;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -24,4 +25,9 @@ public record UsuarioRequest(
         @Schema(example = "SOLICITANTE")
         @NotNull(message = "e obrigatorio")
         Perfil perfil) {
+
+    /** Converte para a entrada do caso de uso: o service nao conhece este request (ARQ-01). */
+    public DadosUsuario paraDados() {
+        return new DadosUsuario(nome, email, perfil);
+    }
 }

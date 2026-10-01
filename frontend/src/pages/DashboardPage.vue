@@ -109,7 +109,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { date } from 'quasar'
+import { formatarDataHora } from 'src/utils/formatacao'
 import StatusBadge from 'components/StatusBadge.vue'
 import PrioridadeBadge from 'components/PrioridadeBadge.vue'
 import { useDashboardStore } from 'stores/dashboard'
@@ -142,7 +142,7 @@ const colunas = [
     label: 'Venceu em',
     field: 'prazoSla',
     align: 'left',
-    format: (v) => date.formatDate(new Date(v), 'DD/MM/YYYY HH:mm')
+    format: (v) => formatarDataHora(v)
   }
 ]
 

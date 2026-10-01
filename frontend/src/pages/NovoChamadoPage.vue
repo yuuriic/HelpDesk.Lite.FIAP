@@ -55,7 +55,7 @@
                   outlined
                   emit-value
                   map-options
-                  :loading="catalogo.carregando"
+                  :loading="catalogo.carregandoCategorias"
                   :rules="[(v) => v !== null || 'Escolha uma categoria']"
                 />
               </div>
@@ -105,17 +105,14 @@ import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useChamadosStore } from 'stores/chamados'
 import { useCatalogoStore } from 'stores/catalogo'
+import { PRIORIDADES, opcoesDe } from 'src/constants/dominio'
 
 const router = useRouter()
 const $q = useQuasar()
 const chamados = useChamadosStore()
 const catalogo = useCatalogoStore()
 
-const OPCOES_PRIORIDADE = [
-  { label: 'Baixa', value: 'BAIXA' },
-  { label: 'Media', value: 'MEDIA' },
-  { label: 'Alta', value: 'ALTA' }
-]
+const OPCOES_PRIORIDADE = opcoesDe(PRIORIDADES)
 
 const formulario = ref(null)
 const enviando = ref(false)

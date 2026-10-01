@@ -1,7 +1,7 @@
 package br.com.helpdesk.service.mapper;
 
 import br.com.helpdesk.domain.model.Comentario;
-import br.com.helpdesk.web.dto.response.ComentarioResponse;
+import br.com.helpdesk.service.dto.ComentarioResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

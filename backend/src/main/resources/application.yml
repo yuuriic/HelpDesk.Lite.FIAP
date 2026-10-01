@@ -1,8 +1,13 @@
+# ------------------------------------------------------------------------------------
+# Configuracao base: vale quando NENHUM perfil e ativado (ex.: `java -jar` sem parametros).
+#
+# E a configuracao mais fechada (SEG-02): sem console H2, sem Swagger, Actuator so com
+# health e prometheus, e a autenticacao simulada por X-User-Id DESLIGADA. Quem quer o
+# ambiente do MVP ativa o perfil `dev` -- o `./mvnw spring-boot:run` ja faz isso (pom.xml).
+# ------------------------------------------------------------------------------------
 spring:
   application:
     name: helpdesk-lite
-  profiles:
-    default: dev
 
   datasource:
     url: jdbc:h2:mem:helpdesk;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
@@ -25,10 +30,7 @@ spring:
 
   h2:
     console:
-      enabled: true
-      path: /h2
-      settings:
-        web-allow-others: false
+      enabled: false
 
   jackson:
     default-property-inclusion: non_null
@@ -47,56 +49,13 @@ server:
 
 springdoc:
   swagger-ui:
+    enabled: false
     path: /swagger-ui.html
     operations-sorter: method
     tags-sorter: alpha
   api-docs:
+    enabled: false
     path: /v3/api-docs
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus,env,loggers
-  endpoint:
-    health:
-      show-details: always
-  metrics:
-    tags:
-      application: helpdesk-lite
-
-logging:
-  level:
-    root: INFO
-    br.com.helpdesk: DEBUG
-    org.hibernate.SQL: DEBUG
-    # Suba para TRACE se precisar ver os valores dos parametros (?) das queries.
-    # Fica em WARN por padrao porque polui o grep por X-Request-Id.
-    org.hibernate.orm.jdbc.bind: WARN
-
----
-# ------------------------------------------------------------------------------------
-# Perfil prod: so o que pode ficar aberto atras da rede interna (secao 4.11 do documento)
-# ------------------------------------------------------------------------------------
-spring:
-  config:
-    activate:
-      on-profile: prod
-  h2:
-    console:
-      enabled: false
-  jpa:
-    hibernate:
-      ddl-auto: validate
-  sql:
-    init:
-      mode: never
-
-springdoc:
-  api-docs:
-    enabled: false
-  swagger-ui:
-    enabled: false
 
 management:
   endpoints:
@@ -106,12 +65,90 @@ management:
   endpoint:
     health:
       show-details: never
+  metrics:
+    tags:
+      application: helpdesk-lite
 
 logging:
   level:
+    root: INFO
     br.com.helpdesk: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
+
+helpdesk:
+  auth:
+    # Login simulado do MVP (ADR-003): o usuario e identificado so pelo header X-User-Id.
+    # Desligado, toda rota protegida responde 401 e as rotas /api/auth/** deixam de existir.
+    # O perfil prod NAO sobe com ele ligado (AutenticacaoSimuladaConfig).
+    simulada: false
+
+---
+# ------------------------------------------------------------------------------------
+# Perfil dev: o ambiente do MVP em localhost (console H2, Swagger, login simulado).
+# Ativado pelo `./mvnw spring-boot:run`.
+# ------------------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: dev
+  h2:
+    console:
+      enabled: true
+      path: /h2
+      settings:
+        web-allow-others: false
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Sem env e loggers (SEG-02): env lista a configuracao inteira e loggers aceita POST
+        # para mudar o nivel de log em tempo de execucao, ambos sem autenticacao.
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    br.com.helpdesk: DEBUG
+    org.hibernate.SQL: DEBUG
+    # Suba para TRACE se precisar ver os valores dos parametros (?) das queries.
+    # Fica em WARN por padrao porque polui o grep por X-Request-Id.
+    org.hibernate.orm.jdbc.bind: WARN
+
+helpdesk:
+  auth:
+    simulada: true
+
+---
+# ------------------------------------------------------------------------------------
+# Perfil prod: so o que pode ficar aberto atras da rede interna (secao 4.11 do documento)
+# ------------------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  sql:
+    init:
+      mode: never
+
+helpdesk:
+  auth:
+    # Obrigatorio: o prod recusa subir com o login simulado ligado (SEG-01). Autenticacao
+    # real (Spring Security/JWT) esta fora do escopo do MVP -- sem ela, toda rota protegida
+    # responde 401.
+    simulada: false
 
 ---
 # ------------------------------------------------------------------------------------
@@ -135,3 +172,7 @@ logging:
     br.com.helpdesk: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
+
+helpdesk:
+  auth:
+    simulada: true

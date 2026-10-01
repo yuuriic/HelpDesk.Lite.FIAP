@@ -113,7 +113,8 @@ HelpDesk.Lite.FIAP/
 ├── frontend/         # interface do sistema (Vue 3 + Quasar 2)
 ├── docs/             # documentação complementar
 │   ├── ARQUITETURA.md
-│   └── MVP.md        # como rodar, demonstrar e operar o MVP
+│   ├── MVP.md        # como rodar, demonstrar e operar o MVP
+│   └── refactoring/  # auditoria técnica, plano e relatórios da modernização
 ├── .gitignore
 ├── .ai/              # arquivos de contexto e padronização
 └── assets/           # recursos visuais e materiais do projeto
@@ -159,6 +160,7 @@ endpoints, testes e guia de operação — está em **[docs/MVP.md](docs/MVP.md)
 - [Atividade 2/02_Prompt_Geracao_Contexto v3.md](Atividade%202/02_Prompt_Geracao_Contexto%20v3.md)
 - [Atividade 2/03_Prompt_Implementacao v3.md](Atividade%202/03_Prompt_Implementacao%20v3.md)
 - [docs/MVP.md](docs/MVP.md) — guia de execução, demonstração e operação do MVP
+- [docs/refactoring/](docs/refactoring/) — auditoria técnica, baseline de testes, plano de modernização e relatório de cada fase
 - [.ai/](.ai/) — contexto do projeto: padrões, arquitetura (ADRs), stack e regras de negócio
 
 ---

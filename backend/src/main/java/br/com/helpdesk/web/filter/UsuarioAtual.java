@@ -1,6 +1,5 @@
 package br.com.helpdesk.web.filter;
 
-import br.com.helpdesk.domain.enums.Perfil;
 import br.com.helpdesk.domain.model.Usuario;
 
 /**
@@ -16,16 +15,4 @@ import br.com.helpdesk.domain.model.Usuario;
 public record UsuarioAtual(Usuario usuario) {
 
     public static final String ATRIBUTO_REQUEST = "usuarioAtual";
-
-    public Long id() {
-        return usuario.getId();
-    }
-
-    public Perfil perfil() {
-        return usuario.getPerfil();
-    }
-
-    public String nome() {
-        return usuario.getNome();
-    }
 }

@@ -23,25 +23,28 @@ helpdesk-lite/
 ```
 br.com.helpdesk
 ├── HelpdeskApplication.java
-├── config/                 # CorsConfig, OpenApiConfig, ClockConfig, WebMvcConfig
+├── config/                 # CorsConfig, OpenApiConfig, ClockConfig, WebMvcConfig,
+│                           # DominioConfig, AutenticacaoSimuladaConfig
 ├── web/
 │   ├── filter/             # RequestIdFilter, UsuarioAtualFilter, UsuarioAtual,
 │   │                       # UsuarioAtualArgumentResolver
 │   ├── controller/         # AuthController, ChamadoController, CategoriaController,
 │   │                       # UsuarioController, DashboardController
-│   ├── dto/request/        # NovoChamadoRequest, AlterarStatusRequest, ...
-│   ├── dto/response/       # ChamadoResponse, ChamadoResumoResponse, ...
+│   ├── dto/request/        # NovoChamadoRequest, AlterarStatusRequest, ... (so entrada HTTP)
 │   └── exception/          # GlobalExceptionHandler, ErroResponse
 ├── service/                # ChamadoService, CategoriaService, UsuarioService,
-│   │                       # DashboardService, PermissaoService, SlaCalculator,
-│   │                       # MetricasNegocio
+│   │                       # DashboardService, MetricasNegocio
+│   ├── dto/                # saidas (*Response) e entradas dos casos de uso (Dados*)
 │   └── mapper/             # ChamadoMapper, CategoriaMapper, UsuarioMapper, ComentarioMapper
 ├── domain/
 │   ├── model/              # Usuario, Categoria, Chamado, Comentario
 │   ├── enums/              # Perfil, StatusChamado, Prioridade
 │   ├── state/              # TransicaoStatus
+│   ├── permissao/          # PermissaoService
+│   ├── sla/                # SlaCalculator, SituacaoSla
 │   └── exception/          # TransicaoInvalidaException, AcessoNegadoException,
-│                           # RecursoNaoEncontradoException, RegraNegocioException
+│                           # RecursoNaoEncontradoException, RegraNegocioException,
+│                           # NaoAutenticadoException
 └── repository/             # UsuarioRepository, CategoriaRepository, ChamadoRepository,
                             # ComentarioRepository, ChamadoSpecification
 ```
@@ -54,11 +57,13 @@ Espelham a estrutura acima, uma pasta por nível da pirâmide:
 
 ```
 backend/src/test/java/br/com/helpdesk/
-├── domain/                 # TransicaoStatusTest, SlaCalculatorTest
-├── service/                # ChamadoServiceTest, PermissaoServiceTest
+├── arquitetura/            # DependenciaEntreCamadasTest (regras da secao 3.1)
+├── domain/                 # TransicaoStatusTest, SlaCalculatorTest, PermissaoServiceTest, ChamadoTest
+├── service/                # ChamadoServiceTest, UsuarioServiceTest, ...
 ├── web/                    # ChamadoControllerTest (@WebMvcTest)
 ├── repository/             # ChamadoSpecificationTest (@DataJpaTest)
-├── integration/            # CicloDeVidaChamadoIT (@SpringBootTest)
+├── integration/            # *IT (@SpringBootTest): ciclo de vida, contrato, erros, concorrencia, ...
+│   └── configuracao/       # perfis, seed, OpenAPI e metricas expostas
 └── support/                # builders e fixtures
 ```
 
@@ -66,15 +71,17 @@ backend/src/test/java/br/com/helpdesk/
 
 ```
 frontend/src/
-├── boot/axios.js
+├── boot/                   # tema.js, sessao.js (revalida a sessao salva)
 ├── router/                 # index.js, routes.js (meta.perfis por rota)
-├── layouts/MainLayout.vue
+├── layouts/                # MainLayout.vue, LoginLayout.vue
 ├── pages/                  # LoginPage, ChamadosPage, ChamadoDetalhePage, ...
 ├── components/             # StatusBadge, PrioridadeBadge, ChamadoAcoes,
-│                           # ComentarioTimeline, ChamadoFiltros
-├── stores/                 # auth.js, chamados.js, catalogo.js
+│                           # ComentarioTimeline, ChamadoFiltros, SeletorTema
+├── constants/dominio.js    # rotulos, cores e icones de perfil, status e prioridade
+├── utils/formatacao.js     # formatacao de data e hora
+├── stores/                 # auth.js, chamados.js, catalogo.js, dashboard.js
 ├── services/               # api.js, chamados.js, categorias.js, usuarios.js, dashboard.js
-└── __tests__/              # Vitest: stores e components
+└── __tests__/              # Vitest: stores, components, boot e api.js
 ```
 
 ---
@@ -106,20 +113,29 @@ Dependência **unidirecional**: `web -> service -> domain <- repository`.
 
 | Camada | Pode | Não pode |
 |---|---|---|
-| `web` | Falar com `service`, montar DTO, definir status HTTP | Conter regra de negócio; acessar `repository` |
+| `web` | Falar com `service`, converter o request para a entrada do caso de uso, definir status HTTP | Conter regra de negócio; acessar `repository` (exceção única: o `UsuarioAtualFilter` carrega o usuário do `X-User-Id`, como na seção 4.6 da arquitetura e na ADR-003) |
 | `service` | Orquestrar, falar com `domain` e `repository` | Conhecer `HttpServletRequest`, `ResponseEntity` ou qualquer tipo de `web` |
 | `domain` | Regras puras | Conhecer Spring, HTTP ou repositórios |
 | `repository` | Query e persistência | Conter regra de negócio |
 
 Uma classe de `domain` **nunca** importa `org.springframework.*` (a única exceção são as
-anotações JPA/Jakarta nas entidades, que são metadados de mapeamento, não Spring).
+anotações JPA/Jakarta nas entidades, que são metadados de mapeamento, não Spring). Regras de
+domínio puras (`TransicaoStatus`, `PermissaoService`, `SlaCalculator`) viram beans pelo
+`DominioConfig`, nunca por `@Service`/`@Component`.
+
+Estas regras são verificadas por `arquitetura/DependenciaEntreCamadasTest`: uma dependência
+proibida quebra o build.
 
 ### 3.2 DTOs
 
 - **Nunca** exponha uma entidade JPA num controller, nem na entrada nem na saída.
-- Um DTO de entrada por operação, em `web/dto/request/`, sufixo `Request`.
-- Um DTO de saída por representação, em `web/dto/response/`, sufixo `Response`.
-- DTOs são `record` Java. São imutáveis e não têm lógica.
+- Um DTO de entrada HTTP por operação, em `web/dto/request/`, sufixo `Request`. É ele que
+  carrega Bean Validation e `@Schema`. O service **não** o recebe: o request se converte
+  (`paraDados()`) na entrada do caso de uso, um record `Dados*` em `service/dto/`. Entrada de
+  um campo só vai como parâmetro simples (ex.: `comentar(id, texto, usuario)`).
+- Um DTO de saída por representação, em `service/dto/`, sufixo `Response`. O controller o
+  devolve como está; ele não tem anotação de web.
+- DTOs são `record` Java. São imutáveis; a única lógica permitida é a conversão do request.
 - Listagens usam um DTO "resumo" (`ChamadoResumoResponse`), o detalhe usa o completo
   (`ChamadoResponse`) — a lista não carrega comentários.
 - O mapeamento é **manual**, em classes de `service/mapper/`. Sem MapStruct (ADR-006).
@@ -166,7 +182,9 @@ Injeção de dependência é por **construtor** (`@RequiredArgsConstructor` + ca
 - **`src/services/api.js`** é o **único** arquivo que conhece o `baseURL` do backend, o
   header `X-User-Id` e o `X-Request-Id`. Nenhuma URL de backend hardcoded em qualquer
   outro arquivo.
-- Um store Pinia por domínio: `auth`, `chamados`, `catalogo`. Stores usam a Setup API
+- Rótulos, cores e ícones de perfil, status e prioridade vêm de `src/constants/dominio.js`;
+  datas são formatadas por `src/utils/formatacao.js`. Nenhuma tela mantém cópia própria.
+- Um store Pinia por domínio: `auth`, `chamados`, `catalogo`, `dashboard`. Stores usam a Setup API
   (`defineStore('nome', () => { ... })`).
 - Componentes usam `<script setup>`. `props` declaradas com tipo e `required`.
 - O router guard é UX: redireciona para `/login` sem sessão e para `/chamados` quando o
@@ -222,6 +240,8 @@ ou `new Date()`. Sempre `Instant.now(clock)`.
 - `DEBUG` de SQL só no perfil `dev`.
 - **Métricas só através de `MetricasNegocio`.** Nenhum service injeta `MeterRegistry`
   diretamente.
+- Counters, timer e linhas de auditoria descrevem o que **aconteceu**: são emitidos depois
+  do commit, via `AposCommit` (ADR-024).
 
 ---
 

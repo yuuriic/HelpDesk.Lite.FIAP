@@ -5,14 +5,14 @@ import br.com.helpdesk.domain.exception.RecursoNaoEncontradoException;
 import br.com.helpdesk.domain.exception.RegraNegocioException;
 import br.com.helpdesk.domain.model.Categoria;
 import br.com.helpdesk.domain.model.Usuario;
+import br.com.helpdesk.domain.permissao.PermissaoService;
 import br.com.helpdesk.domain.state.TransicaoStatus;
 import br.com.helpdesk.repository.CategoriaRepository;
-import br.com.helpdesk.repository.ChamadoRepository;
+import br.com.helpdesk.service.dto.CategoriaResponse;
+import br.com.helpdesk.service.dto.DadosCategoria;
 import br.com.helpdesk.service.mapper.CategoriaMapper;
 import br.com.helpdesk.support.CategoriaBuilder;
 import br.com.helpdesk.support.UsuarioBuilder;
-import br.com.helpdesk.web.dto.request.CategoriaRequest;
-import br.com.helpdesk.web.dto.response.CategoriaResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,8 +39,6 @@ class CategoriaServiceTest {
 
     @Mock
     private CategoriaRepository categoriaRepository;
-    @Mock
-    private ChamadoRepository chamadoRepository;
 
     private CategoriaService categoriaService;
 
@@ -50,7 +48,7 @@ class CategoriaServiceTest {
 
     @BeforeEach
     void prepararServico() {
-        categoriaService = new CategoriaService(categoriaRepository, chamadoRepository,
+        categoriaService = new CategoriaService(categoriaRepository,
                 new PermissaoService(new TransicaoStatus()), new CategoriaMapper());
     }
 
@@ -90,7 +88,7 @@ class CategoriaServiceTest {
         when(categoriaRepository.save(any(Categoria.class)))
                 .thenAnswer(invocacao -> invocacao.getArgument(0));
 
-        categoriaService.criar(new CategoriaRequest("  Facilities  ", 24), carla);
+        categoriaService.criar(new DadosCategoria("  Facilities  ", 24), carla);
 
         ArgumentCaptor<Categoria> capturada = ArgumentCaptor.forClass(Categoria.class);
         verify(categoriaRepository).save(capturada.capture());
@@ -103,7 +101,7 @@ class CategoriaServiceTest {
     void deveRejeitarNomeDuplicadoNaCriacao() {
         when(categoriaRepository.existsByNomeIgnoreCase("Facilities")).thenReturn(true);
 
-        assertThatThrownBy(() -> categoriaService.criar(new CategoriaRequest("Facilities", 24), carla))
+        assertThatThrownBy(() -> categoriaService.criar(new DadosCategoria("Facilities", 24), carla))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("Ja existe");
         verify(categoriaRepository, never()).save(any());
@@ -111,7 +109,7 @@ class CategoriaServiceTest {
 
     @Test
     void deveNegarCriacaoParaSolicitanteEAtendente() {
-        CategoriaRequest requisicao = new CategoriaRequest("Facilities", 24);
+        DadosCategoria requisicao = new DadosCategoria("Facilities", 24);
 
         assertThatThrownBy(() -> categoriaService.criar(requisicao, ana))
                 .isInstanceOf(AcessoNegadoException.class);
@@ -128,7 +126,7 @@ class CategoriaServiceTest {
                 .thenAnswer(invocacao -> invocacao.getArgument(0));
 
         CategoriaResponse resposta =
-                categoriaService.atualizar(5L, new CategoriaRequest("RH e DP", 48), carla);
+                categoriaService.atualizar(5L, new DadosCategoria("RH e DP", 48), carla);
 
         assertThat(resposta.nome()).isEqualTo("RH e DP");
         assertThat(resposta.slaHoras()).isEqualTo(48);
@@ -140,7 +138,7 @@ class CategoriaServiceTest {
                 .thenReturn(Optional.of(CategoriaBuilder.comSla(8).comId(5L).build()));
         when(categoriaRepository.existsByNomeIgnoreCaseAndIdNot(anyString(), anyLong())).thenReturn(true);
 
-        assertThatThrownBy(() -> categoriaService.atualizar(5L, new CategoriaRequest("TI", 4), carla))
+        assertThatThrownBy(() -> categoriaService.atualizar(5L, new DadosCategoria("TI", 4), carla))
                 .isInstanceOf(RegraNegocioException.class);
     }
 
@@ -148,7 +146,7 @@ class CategoriaServiceTest {
     void deveDevolver404AoAtualizarCategoriaInexistente() {
         when(categoriaRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> categoriaService.atualizar(99L, new CategoriaRequest("TI", 4), carla))
+        assertThatThrownBy(() -> categoriaService.atualizar(99L, new DadosCategoria("TI", 4), carla))
                 .isInstanceOf(RecursoNaoEncontradoException.class);
     }
 
@@ -157,7 +155,8 @@ class CategoriaServiceTest {
     void deveDesativarEmVezDeExcluir() {
         Categoria existente = CategoriaBuilder.comSla(8).comId(5L).build();
         when(categoriaRepository.findById(5L)).thenReturn(Optional.of(existente));
-        when(chamadoRepository.existsByCategoriaId(5L)).thenReturn(true);
+        // REG-05: desativar nao consulta mais os chamados da categoria; com ou sem chamados,
+        // o caminho e o mesmo soft delete.
 
         categoriaService.desativar(5L, carla);
 

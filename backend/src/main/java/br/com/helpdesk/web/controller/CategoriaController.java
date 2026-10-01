@@ -1,8 +1,8 @@
 package br.com.helpdesk.web.controller;
 
 import br.com.helpdesk.service.CategoriaService;
+import br.com.helpdesk.service.dto.CategoriaResponse;
 import br.com.helpdesk.web.dto.request.CategoriaRequest;
-import br.com.helpdesk.web.dto.response.CategoriaResponse;
 import br.com.helpdesk.web.filter.UsuarioAtual;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -47,7 +47,7 @@ public class CategoriaController {
     @Operation(summary = "Cria uma categoria (Admin)")
     public CategoriaResponse criar(@Valid @RequestBody CategoriaRequest requisicao,
                                    UsuarioAtual usuarioAtual) {
-        return categoriaService.criar(requisicao, usuarioAtual.usuario());
+        return categoriaService.criar(requisicao.paraDados(), usuarioAtual.usuario());
     }
 
     @PutMapping("/{id}")
@@ -55,7 +55,7 @@ public class CategoriaController {
     public CategoriaResponse atualizar(@PathVariable Long id,
                                        @Valid @RequestBody CategoriaRequest requisicao,
                                        UsuarioAtual usuarioAtual) {
-        return categoriaService.atualizar(id, requisicao, usuarioAtual.usuario());
+        return categoriaService.atualizar(id, requisicao.paraDados(), usuarioAtual.usuario());
     }
 
     @DeleteMapping("/{id}")

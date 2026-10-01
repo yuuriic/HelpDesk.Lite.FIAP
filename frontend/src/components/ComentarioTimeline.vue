@@ -4,9 +4,9 @@
       <q-timeline-entry
         v-for="comentario in comentarios"
         :key="comentario.id"
-        :subtitle="`${comentario.autor.nome} · ${formatar(comentario.criadoEm)}`"
-        :icon="iconePorPerfil(comentario.autor.perfil)"
-        :color="corPorPerfil(comentario.autor.perfil)"
+        :subtitle="`${comentario.autor.nome} · ${formatarDataHora(comentario.criadoEm)}`"
+        :icon="PERFIS[comentario.autor.perfil]?.icone ?? 'person'"
+        :color="PERFIS[comentario.autor.perfil]?.cor ?? 'grey-7'"
       >
         <div class="text-body2" style="white-space: pre-wrap">{{ comentario.texto }}</div>
       </q-timeline-entry>
@@ -19,26 +19,10 @@
 </template>
 
 <script setup>
-import { date } from 'quasar'
+import { PERFIS } from 'src/constants/dominio'
+import { formatarDataHora } from 'src/utils/formatacao'
 
 defineProps({
   comentarios: { type: Array, required: true }
 })
-
-/**
- * O backend serializa Instant em UTC (ISO-8601). O `new Date` converte para o fuso do
- * navegador, que na demonstracao e America/Sao_Paulo.
- */
-function formatar(instante) {
-  return date.formatDate(new Date(instante), 'DD/MM/YYYY HH:mm')
-}
-
-function iconePorPerfil(perfil) {
-  return perfil === 'SOLICITANTE' ? 'person' : 'support_agent'
-}
-
-function corPorPerfil(perfil) {
-  if (perfil === 'ADMIN') return 'purple-6'
-  return perfil === 'SOLICITANTE' ? 'blue-7' : 'teal-7'
-}
 </script>

@@ -10,11 +10,11 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -22,17 +22,18 @@ import java.util.Objects;
 /**
  * Comentario na linha do tempo do chamado.
  *
- * <p>Imutavel apos a criacao: nao existe endpoint de edicao nem de exclusao (regra I4).</p>
+ * <p>Imutavel apos a criacao (regra I4): nao existe endpoint de edicao nem de exclusao, e a
+ * entidade nao tem setters. Comentario novo nasce por {@link #registrar}; o {@code @Builder}
+ * fica so para reconstituir comentarios existentes (fixtures de teste).</p>
  */
 @Entity
 @Table(name = "comentario", indexes = {
         @Index(name = "idx_comentario_chamado", columnList = "chamado_id")
 })
 @Getter
-@Setter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Comentario {
 
     @Id
@@ -52,6 +53,15 @@ public class Comentario {
 
     @Column(name = "criado_em", nullable = false)
     private Instant criadoEm;
+
+    public static Comentario registrar(Chamado chamado, Usuario autor, String texto, Instant agora) {
+        Comentario comentario = new Comentario();
+        comentario.chamado = chamado;
+        comentario.autor = autor;
+        comentario.texto = texto;
+        comentario.criadoEm = agora;
+        return comentario;
+    }
 
     @Override
     public boolean equals(Object outro) {

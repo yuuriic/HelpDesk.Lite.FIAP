@@ -1,7 +1,7 @@
 package br.com.helpdesk.web.controller;
 
 import br.com.helpdesk.service.DashboardService;
-import br.com.helpdesk.web.dto.response.DashboardResumoResponse;
+import br.com.helpdesk.service.dto.DashboardResumoResponse;
 import br.com.helpdesk.web.filter.UsuarioAtual;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

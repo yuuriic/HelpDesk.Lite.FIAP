@@ -40,11 +40,12 @@ public final class ChamadoSpecification {
         return (raiz, consulta, cb) -> {
             List<Predicate> predicados = new ArrayList<>();
 
-            // Visibilidade: o solicitante so enxerga os proprios chamados, sempre.
-            if (perfil == Perfil.SOLICITANTE) {
+            // Visibilidade: quem nao enxerga a base inteira so ve os proprios chamados, sempre.
+            // Mesma pergunta do PermissaoService.verificarVisualizacao (ARQ-03).
+            if (!perfil.enxergaTodosOsChamados()) {
                 predicados.add(cb.equal(raiz.get("solicitante").get("id"), usuarioAtualId));
             } else if (meus) {
-                // Para atendente e admin, "meus" e a fila que a pessoa atende.
+                // Para quem enxerga tudo (atendente e admin), "meus" e a fila que a pessoa atende.
                 predicados.add(cb.equal(raiz.get("atendente").get("id"), usuarioAtualId));
             }
 

@@ -3,10 +3,10 @@ package br.com.helpdesk.web;
 import br.com.helpdesk.domain.enums.Perfil;
 import br.com.helpdesk.domain.enums.Prioridade;
 import br.com.helpdesk.domain.enums.StatusChamado;
+import br.com.helpdesk.service.dto.CategoriaResponse;
+import br.com.helpdesk.service.dto.ChamadoResponse;
+import br.com.helpdesk.service.dto.UsuarioResumoResponse;
 import br.com.helpdesk.support.Fixtures;
-import br.com.helpdesk.web.dto.response.CategoriaResponse;
-import br.com.helpdesk.web.dto.response.ChamadoResponse;
-import br.com.helpdesk.web.dto.response.UsuarioResumoResponse;
 
 import java.util.List;
 

@@ -14,9 +14,9 @@
       </div>
 
       <q-table
-        :rows="catalogo.categorias"
+        :rows="catalogo.todasCategorias"
         :columns="colunas"
-        :loading="catalogo.carregando"
+        :loading="catalogo.carregandoCategorias"
         row-key="id"
         flat
         bordered
@@ -109,7 +109,7 @@ const formulario = ref(null)
 const emEdicao = reactive({ id: null, nome: '', slaHoras: 8 })
 
 // incluirInativas: a tela de administracao precisa enxergar tambem o que foi desativado.
-onMounted(() => catalogo.carregarCategorias(true).catch(() => {}))
+onMounted(() => catalogo.carregarTodasCategorias().catch(() => {}))
 
 function abrirDialogo(categoria = null) {
   Object.assign(emEdicao, categoria
@@ -128,6 +128,8 @@ async function salvar() {
     await catalogo.salvarCategoria({ ...emEdicao })
     dialogoAberto.value = false
     $q.notify({ type: 'positive', message: 'Categoria salva.' })
+  } catch {
+    // Ja notificado pelo interceptor; o dialogo fica aberto para corrigir (EXC-03).
   } finally {
     salvando.value = false
   }
@@ -141,9 +143,8 @@ function confirmarDesativacao(categoria) {
     cancel: { flat: true, noCaps: true, label: 'Cancelar' },
     ok: { unelevated: true, noCaps: true, color: 'negative', label: 'Desativar' },
     persistent: true
-  }).onOk(async () => {
-    await catalogo.desativarCategoria(categoria.id)
-    $q.notify({ type: 'positive', message: 'Categoria desativada.' })
-  })
+  }).onOk(() => catalogo.desativarCategoria(categoria.id)
+    .then(() => $q.notify({ type: 'positive', message: 'Categoria desativada.' }))
+    .catch(() => {})) // ja notificado pelo interceptor (EXC-03)
 }
 </script>

@@ -1,8 +1,8 @@
 package br.com.helpdesk.service.mapper;
 
 import br.com.helpdesk.domain.model.Usuario;
-import br.com.helpdesk.web.dto.response.UsuarioResponse;
-import br.com.helpdesk.web.dto.response.UsuarioResumoResponse;
+import br.com.helpdesk.service.dto.UsuarioResponse;
+import br.com.helpdesk.service.dto.UsuarioResumoResponse;
 import org.springframework.stereotype.Component;
 
 /** Mapeamento manual entidade -> DTO (ADR-006). */

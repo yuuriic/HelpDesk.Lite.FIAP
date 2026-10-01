@@ -1,9 +1,10 @@
-package br.com.helpdesk.service;
+package br.com.helpdesk.domain;
 
 import br.com.helpdesk.domain.enums.StatusChamado;
 import br.com.helpdesk.domain.exception.AcessoNegadoException;
 import br.com.helpdesk.domain.model.Chamado;
 import br.com.helpdesk.domain.model.Usuario;
+import br.com.helpdesk.domain.permissao.PermissaoService;
 import br.com.helpdesk.domain.state.TransicaoStatus;
 import br.com.helpdesk.support.ChamadoBuilder;
 import br.com.helpdesk.support.UsuarioBuilder;
@@ -87,21 +88,16 @@ class PermissaoServiceTest {
     @DisplayName("assumir chamado")
     class Assuncao {
 
+        // DOM-04: a regra depende so do perfil; o chamado, que nunca era lido, saiu da assinatura.
         @Test
         void devePermitirQueAtendenteEAdminAssumam() {
-            Chamado chamado = ChamadoBuilder.aberto().comSolicitante(ana).semAtendente().build();
-
-            assertThatCode(() -> permissaoService.verificarAssuncao(bruno, chamado))
-                    .doesNotThrowAnyException();
-            assertThatCode(() -> permissaoService.verificarAssuncao(carla, chamado))
-                    .doesNotThrowAnyException();
+            assertThatCode(() -> permissaoService.verificarAssuncao(bruno)).doesNotThrowAnyException();
+            assertThatCode(() -> permissaoService.verificarAssuncao(carla)).doesNotThrowAnyException();
         }
 
         @Test
         void deveNegarQueOSolicitanteAssumaAteOProprioChamado() {
-            Chamado chamado = ChamadoBuilder.aberto().comSolicitante(ana).semAtendente().build();
-
-            assertThatThrownBy(() -> permissaoService.verificarAssuncao(ana, chamado))
+            assertThatThrownBy(() -> permissaoService.verificarAssuncao(ana))
                     .isInstanceOf(AcessoNegadoException.class);
         }
     }

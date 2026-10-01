@@ -22,14 +22,18 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Unico ponto do sistema que fala com o {@link MeterRegistry}: nenhum service injeta o
  * registry diretamente. Isso mantem os nomes e as tags das metricas num lugar so.</p>
  *
+ * <p><b>Contadores e timer so contam o que foi confirmado</b> (OBS-02): o valor das tags e lido
+ * na hora, e o incremento fica para depois do commit ({@link AposCommit}). Os gauges nao: eles
+ * republicam uma leitura (ADR-018), nao uma escrita.</p>
+ *
  * <table>
- *   <caption>Metricas expostas</caption>
+ *   <caption>Metricas expostas (nome no /actuator/prometheus)</caption>
  *   <tr><th>Metrica</th><th>Tipo</th><th>Tags</th></tr>
  *   <tr><td>helpdesk_chamados_abertos_total</td><td>Counter</td><td>categoria, prioridade</td></tr>
  *   <tr><td>helpdesk_chamados_transicoes_total</td><td>Counter</td><td>de, para, perfil</td></tr>
  *   <tr><td>helpdesk_chamados_por_status</td><td>Gauge</td><td>status</td></tr>
  *   <tr><td>helpdesk_chamados_fora_sla</td><td>Gauge</td><td>-</td></tr>
- *   <tr><td>helpdesk_tempo_resolucao_segundos</td><td>Timer</td><td>categoria</td></tr>
+ *   <tr><td>helpdesk_tempo_resolucao_seconds_{count,sum,max}</td><td>Timer</td><td>categoria</td></tr>
  * </table>
  */
 @Component
@@ -39,7 +43,12 @@ public class MetricasNegocio {
     public static final String CHAMADOS_TRANSICOES = "helpdesk_chamados_transicoes_total";
     public static final String CHAMADOS_POR_STATUS = "helpdesk_chamados_por_status";
     public static final String CHAMADOS_FORA_SLA = "helpdesk_chamados_fora_sla";
-    public static final String TEMPO_RESOLUCAO = "helpdesk_tempo_resolucao_segundos";
+    /**
+     * Sem unidade no nome: o registro do Prometheus acrescenta a unidade-base do timer
+     * ({@code _seconds}). Com "segundos" no nome, a serie saia como
+     * {@code helpdesk_tempo_resolucao_segundos_seconds_*}.
+     */
+    public static final String TEMPO_RESOLUCAO = "helpdesk_tempo_resolucao";
 
     private final MeterRegistry registry;
 
@@ -66,31 +75,34 @@ public class MetricasNegocio {
 
     /** Registrado em ChamadoService.abrir. */
     public void chamadoAberto(Chamado chamado) {
-        Counter.builder(CHAMADOS_ABERTOS)
+        Tags tags = Tags.of(
+                "categoria", chamado.getCategoria().getNome(),
+                "prioridade", nomeDe(chamado.getPrioridade()));
+        AposCommit.executar(() -> Counter.builder(CHAMADOS_ABERTOS)
                 .description("Total de chamados abertos")
-                .tags(Tags.of(
-                        "categoria", chamado.getCategoria().getNome(),
-                        "prioridade", nomeDe(chamado.getPrioridade())))
+                .tags(tags)
                 .register(registry)
-                .increment();
+                .increment());
     }
 
     /** Registrado em ChamadoService.assumir e ChamadoService.alterarStatus. */
     public void transicaoRegistrada(StatusChamado de, StatusChamado para, Perfil perfil) {
-        Counter.builder(CHAMADOS_TRANSICOES)
+        Tags tags = Tags.of("de", de.name(), "para", para.name(), "perfil", perfil.name());
+        AposCommit.executar(() -> Counter.builder(CHAMADOS_TRANSICOES)
                 .description("Total de transicoes de status")
-                .tags(Tags.of("de", de.name(), "para", para.name(), "perfil", perfil.name()))
+                .tags(tags)
                 .register(registry)
-                .increment();
+                .increment());
     }
 
     /** Registrado ao entrar em RESOLVIDO: resolvidoEm - criadoEm. */
     public void tempoDeResolucao(Chamado chamado, Duration duracao) {
-        Timer.builder(TEMPO_RESOLUCAO)
+        String categoria = chamado.getCategoria().getNome();
+        AposCommit.executar(() -> Timer.builder(TEMPO_RESOLUCAO)
                 .description("Tempo entre a abertura e a resolucao do chamado")
-                .tag("categoria", chamado.getCategoria().getNome())
+                .tag("categoria", categoria)
                 .register(registry)
-                .record(duracao);
+                .record(duracao));
     }
 
     /**

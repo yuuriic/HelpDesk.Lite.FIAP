@@ -4,10 +4,13 @@ import br.com.helpdesk.domain.enums.Prioridade;
 import br.com.helpdesk.domain.enums.StatusChamado;
 import br.com.helpdesk.domain.model.Chamado;
 import br.com.helpdesk.domain.model.Usuario;
+import br.com.helpdesk.domain.permissao.PermissaoService;
+import br.com.helpdesk.domain.sla.SituacaoSla;
+import br.com.helpdesk.domain.sla.SlaCalculator;
 import br.com.helpdesk.repository.ChamadoRepository;
+import br.com.helpdesk.service.dto.ChamadoResumoResponse;
+import br.com.helpdesk.service.dto.DashboardResumoResponse;
 import br.com.helpdesk.service.mapper.ChamadoMapper;
-import br.com.helpdesk.web.dto.response.ChamadoResumoResponse;
-import br.com.helpdesk.web.dto.response.DashboardResumoResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,16 +47,19 @@ public class DashboardService {
         Map<StatusChamado, Long> porStatus = contarPorStatus(chamados);
         Map<Prioridade, Long> porPrioridade = contarPorPrioridade(chamados);
 
+        // SLA avaliado uma vez por chamado (ARQ-04). Antes, "fora do SLA" era reavaliado no
+        // filtro, a cada comparacao da ordenacao e de novo no mapper.
         // Do mais atrasado para o menos: e a ordem util para quem vai agir na fila.
-        List<Chamado> foraDoSla = chamados.stream()
-                .filter(slaCalculator::foraDoSla)
-                .sorted(Comparator.comparing(slaCalculator::atraso).reversed())
+        List<ChamadoAvaliado> foraDoSla = chamados.stream()
+                .map(chamado -> new ChamadoAvaliado(chamado, slaCalculator.situacao(chamado)))
+                .filter(avaliado -> avaliado.sla().foraDoSla())
+                .sorted(Comparator.comparing((ChamadoAvaliado avaliado) -> avaliado.sla().atraso()).reversed())
                 .toList();
 
         metricas.atualizarGauges(porStatus, foraDoSla.size());
 
         List<ChamadoResumoResponse> resumoForaDoSla = foraDoSla.stream()
-                .map(chamadoMapper::paraResumo)
+                .map(avaliado -> chamadoMapper.paraResumo(avaliado.chamado(), avaliado.sla()))
                 .toList();
 
         return new DashboardResumoResponse(
@@ -63,6 +69,10 @@ public class DashboardService {
                 foraDoSla.size(),
                 slaCalculator.tempoMedioResolucaoHoras(chamados),
                 resumoForaDoSla);
+    }
+
+    /** Chamado com a situacao de SLA ja calculada, para nao reavaliar a regra. */
+    private record ChamadoAvaliado(Chamado chamado, SituacaoSla sla) {
     }
 
     /** Todos os status aparecem no mapa, mesmo zerados: o dashboard nao pode ter card faltando. */

@@ -3,6 +3,7 @@ package br.com.helpdesk.service;
 import br.com.helpdesk.domain.enums.Prioridade;
 import br.com.helpdesk.domain.enums.StatusChamado;
 import br.com.helpdesk.domain.exception.AcessoNegadoException;
+import br.com.helpdesk.domain.exception.NaoAutenticadoException;
 import br.com.helpdesk.domain.exception.RecursoNaoEncontradoException;
 import br.com.helpdesk.domain.exception.RegraNegocioException;
 import br.com.helpdesk.domain.exception.TransicaoInvalidaException;
@@ -10,10 +11,16 @@ import br.com.helpdesk.domain.model.Categoria;
 import br.com.helpdesk.domain.model.Chamado;
 import br.com.helpdesk.domain.model.Comentario;
 import br.com.helpdesk.domain.model.Usuario;
+import br.com.helpdesk.domain.permissao.PermissaoService;
+import br.com.helpdesk.domain.sla.SlaCalculator;
 import br.com.helpdesk.domain.state.TransicaoStatus;
 import br.com.helpdesk.repository.CategoriaRepository;
 import br.com.helpdesk.repository.ChamadoRepository;
 import br.com.helpdesk.repository.ComentarioRepository;
+import br.com.helpdesk.repository.UsuarioRepository;
+import br.com.helpdesk.service.dto.ChamadoResponse;
+import br.com.helpdesk.service.dto.ComentarioResponse;
+import br.com.helpdesk.service.dto.DadosNovoChamado;
 import br.com.helpdesk.service.mapper.CategoriaMapper;
 import br.com.helpdesk.service.mapper.ChamadoMapper;
 import br.com.helpdesk.service.mapper.ComentarioMapper;
@@ -22,10 +29,6 @@ import br.com.helpdesk.support.CategoriaBuilder;
 import br.com.helpdesk.support.ChamadoBuilder;
 import br.com.helpdesk.support.Fixtures;
 import br.com.helpdesk.support.UsuarioBuilder;
-import br.com.helpdesk.web.dto.request.NovoChamadoRequest;
-import br.com.helpdesk.web.dto.request.NovoComentarioRequest;
-import br.com.helpdesk.web.dto.response.ChamadoResponse;
-import br.com.helpdesk.web.dto.response.ComentarioResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,12 +41,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -67,6 +72,8 @@ class ChamadoServiceTest {
     @Mock
     private CategoriaRepository categoriaRepository;
     @Mock
+    private UsuarioRepository usuarioRepository;
+    @Mock
     private MetricasNegocio metricas;
 
     private TransicaoStatus transicaoStatus;
@@ -89,7 +96,7 @@ class ChamadoServiceTest {
                 new CategoriaMapper(), usuarioMapper, comentarioMapper, slaCalculator);
 
         chamadoService = new ChamadoService(chamadoRepository, comentarioRepository,
-                categoriaRepository, permissaoService, transicaoStatus, chamadoMapper,
+                categoriaRepository, usuarioRepository, permissaoService, transicaoStatus, chamadoMapper,
                 comentarioMapper, metricas, Fixtures.CLOCK_FIXO);
     }
 
@@ -110,7 +117,7 @@ class ChamadoServiceTest {
             when(categoriaRepository.findById(7L)).thenReturn(Optional.of(categoria));
             devolverOChamadoSalvo();
 
-            NovoChamadoRequest requisicao = new NovoChamadoRequest(
+            DadosNovoChamado requisicao = new DadosNovoChamado(
                     "  Notebook nao liga  ", "  A tela fica preta ao ligar.  ", 7L, Prioridade.ALTA);
 
             // when
@@ -137,8 +144,8 @@ class ChamadoServiceTest {
         @Test
         void deveRejeitarAberturaEmCategoriaInexistente() {
             when(categoriaRepository.findById(99L)).thenReturn(Optional.empty());
-            NovoChamadoRequest requisicao =
-                    new NovoChamadoRequest("Titulo valido", "Descricao valida aqui", 99L, Prioridade.BAIXA);
+            DadosNovoChamado requisicao =
+                    new DadosNovoChamado("Titulo valido", "Descricao valida aqui", 99L, Prioridade.BAIXA);
 
             assertThatThrownBy(() -> chamadoService.abrir(requisicao, ana))
                     .isInstanceOf(RecursoNaoEncontradoException.class);
@@ -149,8 +156,8 @@ class ChamadoServiceTest {
         void deveRejeitarAberturaEmCategoriaInativa() {
             Categoria inativa = CategoriaBuilder.comSla(4).comId(7L).inativa().build();
             when(categoriaRepository.findById(7L)).thenReturn(Optional.of(inativa));
-            NovoChamadoRequest requisicao =
-                    new NovoChamadoRequest("Titulo valido", "Descricao valida aqui", 7L, Prioridade.BAIXA);
+            DadosNovoChamado requisicao =
+                    new DadosNovoChamado("Titulo valido", "Descricao valida aqui", 7L, Prioridade.BAIXA);
 
             assertThatThrownBy(() -> chamadoService.abrir(requisicao, ana))
                     .isInstanceOf(RegraNegocioException.class)
@@ -162,6 +169,55 @@ class ChamadoServiceTest {
     @Nested
     @DisplayName("assumir")
     class Assumir {
+
+        /** Por padrao, o usuario gravado e o mesmo que o filtro leu (N-01). */
+        @BeforeEach
+        void usuarioGravadoIgualAoDoFiltro() {
+            lenient().when(usuarioRepository.findComTravaById(anyLong())).thenAnswer(invocacao -> {
+                Long id = invocacao.getArgument(0);
+                return Stream.of(ana, bruno, carla)
+                        .filter(usuario -> usuario.getId().equals(id)).findFirst();
+            });
+        }
+
+        @Test
+        @DisplayName("decide pelo usuario gravado (travado), nao pelo que o filtro leu (N-01)")
+        void deveDecidirPeloUsuarioGravado() {
+            Chamado chamado = ChamadoBuilder.aberto().comId(10L).comSolicitante(ana).semAtendente().build();
+            Usuario rebaixadoDepoisDoFiltro = UsuarioBuilder.solicitante().comId(2L).build();
+            when(usuarioRepository.findComTravaById(2L)).thenReturn(Optional.of(rebaixadoDepoisDoFiltro));
+            when(chamadoRepository.findWithRelacionamentosById(10L)).thenReturn(Optional.of(chamado));
+
+            assertThatThrownBy(() -> chamadoService.assumir(10L, bruno))
+                    .isInstanceOf(AcessoNegadoException.class);
+            assertThat(chamado.getAtendente()).isNull();
+            verify(chamadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("usuario desativado depois do filtro nao assume: 401, como o filtro faria (N-01)")
+        void deveRecusarUsuarioDesativadoDepoisDoFiltro() {
+            when(usuarioRepository.findComTravaById(2L))
+                    .thenReturn(Optional.of(UsuarioBuilder.atendente().comId(2L).inativo().build()));
+
+            assertThatThrownBy(() -> chamadoService.assumir(10L, bruno))
+                    .isInstanceOf(NaoAutenticadoException.class);
+            verify(chamadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("trava o usuario antes de ler o chamado")
+        void deveTravarOUsuarioAntesDeLerOChamado() {
+            Chamado chamado = ChamadoBuilder.aberto().comId(10L).comSolicitante(ana).semAtendente().build();
+            when(chamadoRepository.findWithRelacionamentosById(10L)).thenReturn(Optional.of(chamado));
+            devolverOChamadoSalvo();
+
+            chamadoService.assumir(10L, bruno);
+
+            InOrder ordem = inOrder(usuarioRepository, chamadoRepository);
+            ordem.verify(usuarioRepository).findComTravaById(2L);
+            ordem.verify(chamadoRepository).findWithRelacionamentosById(10L);
+        }
 
         @Test
         void deveDefinirOAtendenteEMudarOStatusParaEmAtendimento() {
@@ -341,7 +397,7 @@ class ChamadoServiceTest {
                     .thenAnswer(invocacao -> invocacao.getArgument(0));
 
             ComentarioResponse resposta =
-                    chamadoService.comentar(10L, new NovoComentarioRequest("  Segue o print  "), ana);
+                    chamadoService.comentar(10L, "  Segue o print  ", ana);
 
             ArgumentCaptor<Comentario> capturado = ArgumentCaptor.forClass(Comentario.class);
             verify(comentarioRepository).save(capturado.capture());
@@ -359,7 +415,7 @@ class ChamadoServiceTest {
             when(chamadoRepository.findWithRelacionamentosById(10L)).thenReturn(Optional.of(chamado));
 
             assertThatThrownBy(() ->
-                    chamadoService.comentar(10L, new NovoComentarioRequest("Oi"), outro))
+                    chamadoService.comentar(10L, "Oi", outro))
                     .isInstanceOf(AcessoNegadoException.class);
             verify(comentarioRepository, never()).save(any());
         }

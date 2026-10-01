@@ -12,22 +12,24 @@ acoplados só por um contrato REST/JSON.
 
 | Camada | Responsabilidade | O que **não** faz |
 |---|---|---|
-| **web** | Rotas, status HTTP, DTOs de entrada/saída, Bean Validation, filtros de request id e usuário atual, tradução de exceção em JSON | Nenhuma regra de negócio. Não acessa repositório |
-| **service** | Orquestra o caso de uso: busca -> permissão -> transição -> persiste -> mapeia. Permissão, SLA, métricas e mapeamento | Não formata resposta HTTP. Não conhece `HttpServletRequest` nem `ResponseEntity` |
-| **domain** | Entidades, enums, máquina de estados, exceções de negócio. Regras puras | Não conhece Spring, HTTP nem repositórios |
+| **web** | Rotas, status HTTP, DTOs de **entrada HTTP** (`*Request`, com Bean Validation) convertidos na entrada do caso de uso, filtros de request id e usuário atual, tradução de exceção em JSON | Nenhuma regra de negócio. Não acessa repositório (exceção: o `UsuarioAtualFilter` carrega o usuário do `X-User-Id`, seção 4.6) |
+| **service** | Orquestra o caso de uso: busca -> permissão -> agregado (transição) -> persiste -> mapeia. Métricas e mapeamento. Recebe `Dados*` e devolve `*Response`, ambos em `service.dto` | Não formata resposta HTTP. Não conhece `HttpServletRequest`, `ResponseEntity` nem **nenhum tipo de `web`** (ARQ-01) |
+| **domain** | Entidades com comportamento, enums, máquina de estados, permissão e SLA (`domain.permissao`, `domain.sla`), exceções de negócio. Regras puras | Não conhece Spring, HTTP nem repositórios |
 | **repository** | Interfaces Spring Data, `Specification` de filtros e visibilidade, seed | Nenhuma regra de negócio |
 
 O domínio não conhece a camada web nem a de persistência. As entidades carregam anotações
-JPA, mas nenhuma regra de negócio depende do Spring.
+JPA, mas nenhuma regra de negócio depende do Spring. A direção das dependências é verificada
+no build por `arquitetura/DependenciaEntreCamadasTest`.
 
 ---
 
 ## 2. ADRs
 
-Os ADRs 001 a 013 são cópia da seção 4.7 do documento de arquitetura, com a numeração
-preservada. Os ADRs 014 a 018 foram acrescentados ao gerar este contexto: 014 por
-instrução explícita, 015 a 018 resolvendo ambiguidades do documento original (registradas
-na seção 8).
+Esta seção é a **fonte única** do texto das ADRs; a seção 4.7 de `docs/ARQUITETURA.md` traz
+só o índice. Os ADRs 001 a 013 vêm do documento de arquitetura, com a numeração preservada.
+Os ADRs 014 a 018 foram acrescentados ao gerar este contexto: 014 por instrução explícita,
+015 a 018 resolvendo ambiguidades do documento original (registradas na seção 8). Os ADRs
+019 a 024 registram as decisões da modernização (`docs/refactoring/`).
 
 ---
 
@@ -101,8 +103,9 @@ na seção 8).
 - **Decisão.** H2 em memória, seed via `data.sql`.
 - **Alternativas.** PostgreSQL via Docker.
 - **Consequências.** Zero setup. Os dados somem a cada restart, o que é aceitável (e até
-  desejável) numa demonstração. JPA abstrai a troca; um `application-prod.yml` aponta
-  para outro datasource sem mexer em código.
+  desejável) numa demonstração. JPA abstrai a troca: todos os perfis estão no mesmo
+  `application.yml`, e o `prod` já desliga o seed e usa `ddl-auto: validate`; o datasource
+  real entra por variável de ambiente, sem mexer em código.
 
 ### ADR-009 — Soft delete (`ativo = false`) em usuário e categoria
 
@@ -148,7 +151,7 @@ na seção 8).
 - **Consequências.** Regras de SLA e permissão viram testes unitários puros, com
   `Clock.fixed(...)` e sem mock de contexto estático.
 
-### ADR-014 — CORS liberado apenas para `http://localhost:9000` no perfil `dev`
+### ADR-014 — CORS liberado apenas para `http://localhost:9000`
 
 - **Contexto.** No MVP a SPA (porta 9000) e a API (porta 8080) são origens diferentes,
   então o navegador exige CORS.
@@ -158,8 +161,10 @@ na seção 8).
 - **Alternativas.** Liberar `*`; usar proxy do Vite para `/api`.
 - **Consequências.** A origem única deixa explícito que isso é configuração de
   desenvolvimento. `X-Request-Id` precisa estar em `exposedHeaders`, senão o JavaScript
-  não consegue lê-lo e o `q-notify` perde a correlação com o log. Em produção a SPA e a
-  API ficam sob a mesma origem via Nginx e o CORS deixa de existir.
+  não consegue lê-lo e o `q-notify` perde a correlação com o log. O `CorsConfig` não tem
+  `@Profile`: a regra existe em todos os perfis, mas em produção a SPA e a API ficam sob a
+  mesma origem via Nginx, o navegador não faz requisição de outra origem e a regra não é
+  usada (qualquer outra origem continua recusada).
 
 ### ADR-015 — Fronteira entre 403 e 422 na alteração de status
 
@@ -219,6 +224,104 @@ na seção 8).
   o gauge fica desatualizado se ninguém abrir o dashboard — aceitável no MVP, e o
   `/actuator/prometheus` mostra zero até a primeira leitura. A evolução natural é o
   `Gauge` com função de consulta quando houver scrape de verdade.
+- **Revisão (Fase 8 da modernização).** A auditoria classificou esse comportamento como
+  defeito (OBS-01). Reavaliado: é exatamente a consequência registrada acima, o MVP não tem
+  Prometheus configurado (nenhum alerta depende do gauge) e as duas alternativas trariam um
+  agendador ou consultas por scrape. **Decisão mantida**; o teste que o fixava como defeito
+  passou a ser teste de contrato (`ObservabilidadeIT.deveAtualizarOGaugeNaLeituraDoDashboard`).
+  Reabrir esta ADR quando houver scrape de verdade.
+
+### ADR-019 — Erros do framework no handler central; 409 para conflitos; 401 no login
+
+- **Contexto.** A auditoria (EXC-01) encontrou rota inexistente, método não suportado,
+  `Content-Type` errado, JSON malformado e ordenação por campo inexistente respondendo 500
+  com stack trace em `ERROR`. O login respondia 404/422 onde o filter responde 401 (REG-04).
+- **Decisão.** O `GlobalExceptionHandler` estende `ResponseEntityExceptionHandler` e devolve
+  esses casos no formato padrão (404, 405, 415, 400 `VALIDACAO`).
+  `DataIntegrityViolationException` e `ObjectOptimisticLockingFailureException` viram 409
+  `CONFLITO`. O login lança `NaoAutenticadoException` (401 `NAO_AUTENTICADO`) para usuário
+  inexistente ou inativo, como o filter.
+- **Alternativas.** Um `@ExceptionHandler` por exceção do Spring; manter o 500 genérico.
+- **Consequências.** Nenhum erro do cliente vira 500. O frontend trata o 401 do login e o
+  do filter da mesma forma. O formato do corpo não mudou.
+
+### ADR-020 — Optimistic locking no chamado e guardas das invariantes I3/I11
+
+- **Contexto.** Duas assunções simultâneas do mesmo chamado terminavam as duas com 200, e a
+  segunda sobrescrevia a primeira (CON-01). Um admin podia desativar o último admin (REG-01)
+  e rebaixar ou desativar o atendente de chamados em andamento (REG-02).
+- **Decisão.** `Chamado` ganha `@Version versao`. A gravação que perde a corrida recebe 409
+  `CONFLITO`. O `UsuarioService` aplica as invariantes que já existiam (I3 e I11) antes de
+  alterar ou desativar um usuário, com 422 `REGRA_NEGOCIO`.
+- **Alternativas.** Lock pessimista (`SELECT ... FOR UPDATE`), que serializa a leitura sem
+  necessidade; reatribuir automaticamente os chamados do atendente, que seria funcionalidade
+  nova (plano de modernização, §14).
+- **Consequências.** Uma das assunções vence e a outra é avisada. O schema ganha a coluna
+  `versao`: em `prod` (`ddl-auto: validate`) é preciso o script
+  `ALTER TABLE chamado ADD COLUMN versao BIGINT DEFAULT 0 NOT NULL` (`docs/ARQUITETURA.md`
+  §4.9). A reatribuição de chamado continua fora do MVP.
+- **Revisão (correção do N-01, pós-auditoria).** As guardas de I3/I11 eram "conta e depois
+  grava" sobre linhas diferentes (*write skew*), e o `@Version` não as protege. Agora quem
+  altera ou desativa um usuário trava (`SELECT ... FOR UPDATE`), nesta ordem, os admins ativos
+  por id e o próprio usuário, e só então conta. O `assumir` trava a linha do atendente e decide
+  pelo usuário gravado, não pelo que o filtro leu. A requisição concorrente espera e recebe a
+  resposta da regra (422/403/401). Uma trava não obtida dentro do limite do banco vira 409
+  `CONFLITO`. Sem mudança de schema. Detalhe em
+  `docs/refactoring/execucao/correcao-n01-concorrencia-usuarios.md`.
+
+### ADR-021 — Configuração base fechada, `dev` explícito e guarda do login simulado
+
+- **Contexto.** O `application.yml` sem perfil abria console H2, Swagger, `env`, `loggers` e
+  o login por `X-User-Id` (SEG-01, SEG-02). Um deploy que esquecesse o perfil subiria aberto.
+- **Decisão.** A configuração base é a mais fechada: sem console, sem Swagger, Actuator com
+  `health` e `prometheus` e `helpdesk.auth.simulada=false`. O `./mvnw spring-boot:run` ativa
+  o `dev` pelo `pom.xml`. O `AutenticacaoSimuladaConfig`, um `EnvironmentPostProcessor`
+  registrado em `META-INF/spring.factories`, impede a aplicação de subir com `prod` ativo e
+  o login simulado ligado. Isso é verificado antes de qualquer bean ser criado.
+- **Alternativas.** Manter `dev` como padrão; um `@Configuration` com a verificação, que
+  roda tarde demais, com o servidor já criado; Spring Security, fora do escopo.
+- **Consequências.** Esquecer o perfil não abre nada. `env` e `loggers` não são expostos em
+  perfil nenhum. As rotas públicas do login devolvem só `id`, `nome` e `perfil`, e o e-mail
+  não aparece em log (SEG-03, SEG-04).
+
+### ADR-022 — `Chamado` como agregado; permissão e SLA no domínio
+
+- **Contexto.** O modelo era anêmico: o `ChamadoService` mudava status, datas e atendente
+  por setters, e as regras de permissão e SLA moravam no pacote `service` (DOM-01…03).
+- **Decisão.** O `Chamado` expõe operações (`abrir`, `assumir`, `alterarStatus`,
+  `tempoAteResolucao`) e não tem setters; a aresta é validada na `TransicaoStatus` de dentro
+  do agregado. `Comentario.registrar` cria o comentário. O `Perfil` declara as capacidades de
+  cada perfil. `PermissaoService` e `SlaCalculator` passam para `domain.permissao` e
+  `domain.sla`, sem anotação do Spring, e são instanciados pelo `DominioConfig`.
+- **Alternativas.** Manter os setters; transformar as entidades em `record` (incompatível
+  com JPA).
+- **Consequências.** Cada regra do chamado tem um só lugar e é testada com `new`. A ordem
+  403 → 422 continua escrita no service: a permissão é chamada antes do agregado.
+
+### ADR-023 — Contratos do service em `service.dto`; dependência verificada por teste
+
+- **Contexto.** O `service` importava `web.dto` 17 vezes (ARQ-01), contrariando a ADR-002.
+- **Decisão.** Os `*Response` passam para `service.dto`. A entrada dos casos de uso são
+  records `Dados*` (`DadosNovoChamado`, `DadosCategoria`, `DadosUsuario`). Cada `*Request` de
+  `web` converte a si mesmo com `paraDados()`. `arquitetura/DependenciaEntreCamadasTest` lê
+  o código-fonte e falha o build se uma camada importar quem não deve.
+- **Alternativas.** ArchUnit (dependência nova); manter a dependência e só documentá-la.
+- **Consequências.** O JSON das respostas não mudou (os tipos só mudaram de pacote). A
+  Bean Validation continua nos `*Request`. O `config` é a única exceção à regra, por ser a
+  raiz de composição.
+
+### ADR-024 — Métricas e auditoria emitidas depois do commit
+
+- **Contexto.** Counters, timer e linhas de auditoria eram emitidos dentro da transação.
+  O perdedor de uma assunção concorrente (409) era contado e auditado como se tivesse
+  acontecido (OBS-02).
+- **Decisão.** `AposCommit` registra o efeito como `afterCommit` da transação corrente. Fora
+  de transação, roda na hora. Os gauges não passam por ele: republicam uma leitura.
+- **Alternativas.** `@TransactionalEventListener` com eventos de domínio (mais classes, mesmo
+  efeito); emitir antes e compensar no rollback.
+- **Consequências.** Só o que foi confirmado aparece em métricas e na auditoria. O
+  `afterCommit` roda na thread da requisição, então `requestId` e `usuarioId` continuam no
+  MDC.
 
 ---
 
@@ -233,13 +336,13 @@ web  ->  service  ->  domain  <-  repository
 | `RequestIdFilter` | Gera ou reaproveita `X-Request-Id`, coloca no MDC, devolve no header da resposta | Não sabe quem é o usuário |
 | `UsuarioAtualFilter` | Lê `X-User-Id`, carrega o usuário, publica `UsuarioAtual` no request e `usuarioId` no MDC; 401 se ausente, inválido ou inativo | Não decide permissão |
 | Controllers | Rotas, status HTTP, DTO de entrada/saída, delega para o service | Nenhuma regra de negócio |
-| `PermissaoService` | Traduz a tabela de permissões em código: perfil + relação com o chamado | Não acessa banco |
+| `PermissaoService` (`domain.permissao`) | Traduz a tabela de permissões em código: perfil + relação com o chamado | Não acessa banco |
 | `TransicaoStatus` | Tabela de transições válidas e quem executa cada uma. Único lugar que conhece a máquina de estados | Não sabe de HTTP |
-| `ChamadoService` | Orquestra: busca -> permissão -> transição -> persiste -> mapeia | Não formata resposta HTTP |
+| `ChamadoService` | Orquestra: busca -> permissão -> agregado (`Chamado.alterarStatus` valida a aresta) -> persiste -> mapeia; métricas e auditoria depois do commit | Não formata resposta HTTP; não altera campo do chamado direto |
 | `ChamadoSpecification` | Monta a query dinâmica dos filtros e **injeta `solicitanteId = usuarioAtual` quando o perfil é `SOLICITANTE`** | — |
-| `SlaCalculator` | Prazo, fora do SLA, tempo médio de resolução. Recebe `Clock` injetado | Não acessa banco |
+| `SlaCalculator` (`domain.sla`) | Prazo, fora do SLA, tempo médio de resolução. Recebe `Clock` injetado. Usado pelo `ChamadoMapper` e pelo `DashboardService` | Não acessa banco |
 | `MetricasNegocio` | Encapsula counters, gauges e timers. Único ponto que fala com o `MeterRegistry` | Não contém regra de negócio |
-| `GlobalExceptionHandler` | Converte exceção em JSON padrão | — |
+| `GlobalExceptionHandler` | Converte exceção em JSON padrão, inclusive os erros do Spring MVC e os conflitos (409) — ADR-019 | Nunca devolve stack trace |
 
 ---
 
@@ -253,7 +356,8 @@ Em toda operação sobre um chamado:
 
 Primeiro *quem pode*, depois *se pode agora*. Inverter vazaria o estado do chamado para
 quem não deveria vê-lo. Há um teste de `ChamadoService` que existe só para travar essa
-ordem (`deveVerificarPermissaoAntesDaTransicao`).
+ordem (`deveVerificarPermissaoAntesDaTransicao` e `deveChamarPermissaoEDepoisTransicaoNaOrdem`),
+e o `CicloDeVidaChamadoIT.deveAplicarPermissaoEDepoisTransicaoNaApi` confere o mesmo pela API.
 
 ---
 
@@ -275,10 +379,16 @@ no `q-notify` de erro do frontend.
 
 ### 5.2 Actuator
 
-| Perfil | Endpoints expostos |
-|---|---|
-| `dev` | `health` (com `show-details: always`), `metrics`, `prometheus`, `info`, `env`, `loggers` — todos em `localhost` |
-| `prod` | Somente `health` e `prometheus`, atrás da rede interna |
+| Perfil | Endpoints expostos | Console H2 / Swagger | Login simulado (`X-User-Id`) |
+|---|---|---|---|
+| nenhum (`java -jar` sem parâmetro) | Somente `health` (sem detalhes) e `prometheus` | desligados | **desligado**: toda rota protegida responde 401 e `/api/auth/**` não existe |
+| `dev` (`./mvnw spring-boot:run`) | `health` (com `show-details: always`), `metrics`, `prometheus`, `info` — em `localhost`. **Nunca** `env` nem `loggers` (SEG-02) | ligados | ligado |
+| `test` | como a configuração base | desligados | ligado |
+| `prod` | Somente `health` (sem detalhes) e `prometheus`, atrás da rede interna | desligados | **proibido**: com `helpdesk.auth.simulada=true` a aplicação não sobe (SEG-01) |
+
+A configuração sem perfil é a mais fechada de propósito: esquecer o perfil num deploy não
+abre nada. As rotas públicas do login simulado devolvem só `id`, `nome` e `perfil` — nunca
+e-mail (SEG-03).
 
 ### 5.3 Métricas de negócio
 
@@ -286,16 +396,22 @@ no `q-notify` de erro do frontend.
 |---|---|---|---|
 | `helpdesk_chamados_abertos_total` | Counter | `categoria`, `prioridade` | `ChamadoService.abrir` |
 | `helpdesk_chamados_transicoes_total` | Counter | `de`, `para`, `perfil` | `ChamadoService.alterarStatus` / `assumir` |
-| `helpdesk_chamados_por_status` | Gauge | `status` | Consulta agregada, atualizada a cada leitura |
-| `helpdesk_chamados_fora_sla` | Gauge | — | `SlaCalculator` sobre chamados abertos/em atendimento |
-| `helpdesk_tempo_resolucao_segundos` | Timer / Distribution | `categoria` | Ao entrar em `RESOLVIDO` (`resolvidoEm - criadoEm`) |
+| `helpdesk_chamados_por_status` | Gauge | `status` | Recalculado na leitura do dashboard (ADR-018) |
+| `helpdesk_chamados_fora_sla` | Gauge | — | Recalculado na leitura do dashboard (ADR-018), pela regra de SLA da seção 8.3 (inclui os resolvidos depois do prazo) |
+| `helpdesk_tempo_resolucao_seconds` (`_count`, `_sum`, `_max`) | Timer | `categoria` | Ao entrar em `RESOLVIDO` (`resolvidoEm - criadoEm`). O nome no Micrometer é `helpdesk_tempo_resolucao`; o Prometheus acrescenta `_seconds` |
 
 Todas passam por `MetricasNegocio`. Nenhum service injeta `MeterRegistry`.
 
+**Contadores e timer só contam o que foi confirmado** (OBS-02): o incremento roda depois do
+commit da transação. Uma operação revertida — o perdedor de uma assunção concorrente (409),
+por exemplo — não aparece. Os gauges republicam uma leitura, não uma escrita, e não esperam
+commit.
+
 ### 5.4 Log de auditoria
 
-Toda transição de status e toda ação administrativa geram uma linha `INFO` com
-`requestId`, `usuarioId`, `perfil`, `acao`, `chamadoId`, `statusDe`, `statusPara`.
+Toda transição de status e toda ação administrativa **confirmadas** geram uma linha `INFO`
+com `requestId`, `usuarioId`, `perfil`, `acao`, `chamadoId`, `statusDe`, `statusPara`. A linha
+é escrita depois do commit (OBS-02): o que foi revertido não deixa rastro de auditoria falso.
 Isso reconstrói a história de qualquer chamado sem tabela extra de auditoria.
 
 Regras: nenhum dado pessoal além do id do usuário em `INFO` ou acima; `DEBUG` de SQL só
@@ -317,7 +433,7 @@ em `dev`; 4xx em `WARN` sem stack trace, 5xx em `ERROR` com stack trace.
 
 ```
         (E2E — fora do MVP, 0 testes)
-     Integração   @SpringBootTest + H2 — 1 teste de ciclo de vida
+     Integração   @SpringBootTest + H2 — ciclo de vida, contrato, erros, concorrência, perfis
    Fatias         @WebMvcTest (controller+validação+handler), @DataJpaTest (Specification)
  Unitários        domain e service com JUnit 5 + Mockito + AssertJ; Vitest no frontend
 ```
@@ -334,7 +450,8 @@ E2E (Cypress) está **fora do MVP**.
 | Unitário — service | `ChamadoService` (repos mockados) | Assumir muda atendente e status; permissão é checada **antes** da transição; `resolvidoEm`/`fechadoEm` preenchidos com o `Clock` |
 | Slice — web | `@WebMvcTest(ChamadoController)` | 400 em DTO inválido; 401 sem header; 403/404/422 mapeados a partir das exceções; JSON de erro no formato padrão |
 | Slice — dados | `@DataJpaTest` | `ChamadoSpecification`: solicitante não vê chamados de outros nem no `count`; combinação de filtros |
-| Integração | `@SpringBootTest` + `MockMvc` | Abrir -> assumir -> comentar -> resolver -> fechar, com três usuários diferentes |
+| Integração | `@SpringBootTest` + `MockMvc` (ou servidor real) | Abrir -> assumir -> comentar -> resolver -> fechar, com três usuários diferentes; contrato JSON; erros HTTP; 409 de concorrência; configuração de cada perfil |
+| Arquitetura | `DependenciaEntreCamadasTest` | Nenhuma dependência proibida entre camadas (ADR-023) |
 | Frontend — unitário | `authStore`, `chamadosStore`, `ChamadoAcoes` | Helpers de perfil; recarrega lista após ação; botões exibidos conforme perfil + status |
 
 ### 6.3 Meta de cobertura

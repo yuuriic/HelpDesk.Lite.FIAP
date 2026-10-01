@@ -1,0 +1,2 @@
+# Guarda do login simulado (SEG-01): roda assim que a configuracao e lida, antes dos beans.
+org.springframework.boot.env.EnvironmentPostProcessor=br.com.helpdesk.config.AutenticacaoSimuladaConfig

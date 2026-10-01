@@ -107,8 +107,12 @@ INSERT INTO comentario (id, chamado_id, autor_id, texto, criado_em) VALUES
 -- ---------------------------------------------------------------------------------------
 -- As colunas de id sao IDENTITY. Inserir ids explicitos NAO avanca o contador, entao sem
 -- este RESTART o primeiro chamado aberto pela interface colidiria com o id 1.
+--
+-- O valor e calculado (CON-05): antes eram numeros fixos que precisavam ser atualizados a
+-- mao a cada linha incluida no seed -- esquecer causava violacao de chave primaria no
+-- primeiro cadastro feito pela interface.
 -- ---------------------------------------------------------------------------------------
-ALTER TABLE usuario    ALTER COLUMN id RESTART WITH 4;
-ALTER TABLE categoria  ALTER COLUMN id RESTART WITH 5;
-ALTER TABLE chamado    ALTER COLUMN id RESTART WITH 9;
-ALTER TABLE comentario ALTER COLUMN id RESTART WITH 7;
+ALTER TABLE usuario    ALTER COLUMN id RESTART WITH (SELECT MAX(id) + 1 FROM usuario);
+ALTER TABLE categoria  ALTER COLUMN id RESTART WITH (SELECT MAX(id) + 1 FROM categoria);
+ALTER TABLE chamado    ALTER COLUMN id RESTART WITH (SELECT MAX(id) + 1 FROM chamado);
+ALTER TABLE comentario ALTER COLUMN id RESTART WITH (SELECT MAX(id) + 1 FROM comentario);

@@ -140,4 +140,27 @@ describe('authStore', () => {
 
     expect(auth.autenticado).toBe(false)
   })
+
+  describe('revalidar a sessao guardada (SEG-08)', () => {
+    it('atualiza o perfil que mudou no backend desde o ultimo acesso', async () => {
+      localStorage.setItem('helpdesk.usuario', JSON.stringify(BRUNO))
+      respostas.post = { id: BRUNO.id, nome: BRUNO.nome, perfil: 'SOLICITANTE' }
+      const auth = useAuthStore()
+      expect(auth.perfil).toBe('ATENDENTE')
+
+      await auth.revalidarSessao()
+
+      expect(requisicoes.at(-1)).toMatchObject({ metodo: 'post', url: '/auth/login', corpo: { usuarioId: BRUNO.id } })
+      expect(auth.perfil).toBe('SOLICITANTE')
+      expect(JSON.parse(localStorage.getItem('helpdesk.usuario')).perfil).toBe('SOLICITANTE')
+      expect(usuarioAtual()).toBe(BRUNO.id)
+    })
+
+    it('sem sessao guardada nao chama o backend', async () => {
+      const auth = useAuthStore()
+
+      expect(await auth.revalidarSessao()).toBeNull()
+      expect(requisicoes).toHaveLength(0)
+    })
+  })
 })

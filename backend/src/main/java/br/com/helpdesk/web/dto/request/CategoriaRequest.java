@@ -1,5 +1,6 @@
 package br.com.helpdesk.web.dto.request;
 
+import br.com.helpdesk.service.dto.DadosCategoria;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
@@ -20,4 +21,9 @@ public record CategoriaRequest(
         @Positive(message = "deve ser maior que zero")
         @Max(value = 8760, message = "deve ser no maximo 8760 (um ano)")
         Integer slaHoras) {
+
+    /** Converte para a entrada do caso de uso: o service nao conhece este request (ARQ-01). */
+    public DadosCategoria paraDados() {
+        return new DadosCategoria(nome, slaHoras);
+    }
 }

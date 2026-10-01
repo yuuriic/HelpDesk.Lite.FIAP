@@ -55,7 +55,7 @@
         <template #body-cell-sla="props">
           <q-td :props="props">
             <q-badge v-if="props.row.foraDoSla" color="negative" label="Fora do SLA" />
-            <span v-else class="text-grey-7">{{ formatar(props.row.prazoSla) }}</span>
+            <span v-else class="text-grey-7">{{ formatarDataHora(props.row.prazoSla) }}</span>
           </q-td>
         </template>
 
@@ -92,7 +92,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { date } from 'quasar'
+import { formatarDataHora } from 'src/utils/formatacao'
 import ChamadoFiltros from 'components/ChamadoFiltros.vue'
 import StatusBadge from 'components/StatusBadge.vue'
 import PrioridadeBadge from 'components/PrioridadeBadge.vue'
@@ -119,7 +119,7 @@ const colunas = [
     field: (linha) => linha.atendente?.nome ?? 'Nao atribuido',
     align: 'left'
   },
-  { name: 'criadoEm', label: 'Aberto em', field: 'criadoEm', align: 'left', format: (v) => formatar(v) },
+  { name: 'criadoEm', label: 'Aberto em', field: 'criadoEm', align: 'left', format: (v) => formatarDataHora(v) },
   { name: 'sla', label: 'SLA', field: 'prazoSla', align: 'left' },
   { name: 'acoes', label: '', field: 'id', align: 'right' }
 ]
@@ -131,10 +131,6 @@ const legenda = computed(() => {
     ? `${total} ${sufixo} abertos por voce`
     : `${total} ${sufixo} na base`
 })
-
-function formatar(instante) {
-  return instante ? date.formatDate(new Date(instante), 'DD/MM/YYYY HH:mm') : '-'
-}
 
 function abrirDetalhe(chamado) {
   router.push({ name: 'chamado-detalhe', params: { id: chamado.id } })

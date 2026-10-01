@@ -32,12 +32,13 @@ HelpDesk.Lite.FIAP/
 ├── Atividade 2/             # Entregáveis da Aula 2: os prompts de contexto e implementação
 ├── .ai/                     # Contexto para agentes de IA — a "constituição" do projeto
 │   ├── standards.md         #   Convenções de código e estilo
-│   ├── architecture.md      #   Decisões de alto nível (18 ADRs)
+│   ├── architecture.md      #   Decisões de alto nível (24 ADRs, texto completo)
 │   ├── tech-stack.md        #   Versões e bibliotecas permitidas
 │   └── business-rules.md    #   Lógica de negócio e domínio
 ├── docs/
 │   ├── ARQUITETURA.md       # Documento de arquitetura — fonte da verdade
-│   └── MVP.md               # Este guia
+│   ├── MVP.md               # Este guia
+│   └── refactoring/         # Auditoria, baseline, plano e relatórios da modernização
 ├── backend/                 # API REST Spring Boot
 ├── frontend/                # SPA Quasar
 └── .gitignore
@@ -46,10 +47,10 @@ HelpDesk.Lite.FIAP/
 Os quatro arquivos em `.ai/` são derivados de `docs/ARQUITETURA.md` e foram a entrada do
 agente que escreveu o código. Em caso de conflito, **`.ai/` prevalece sobre `docs/`**.
 
-> `docs/ARQUITETURA.md` é o mesmo documento entregue em
-> `Atividade 1/01_Arquitetura_HelpDesk_Lite v3.md`. Ele existe nos dois lugares de
-> propósito: `Atividade 1/` preserva o entregável da aula como foi entregue, e `docs/` é o
-> caminho que os arquivos de `.ai/` e este guia referenciam.
+> `docs/ARQUITETURA.md` nasceu do documento entregue em
+> `Atividade 1/01_Arquitetura_HelpDesk_Lite v3.md`. `Atividade 1/` preserva o entregável da
+> aula como foi entregue; `docs/` é o caminho que os arquivos de `.ai/` e este guia
+> referenciam, e é mantido coerente com o código (atualizado na Fase 9 da modernização).
 
 ---
 
@@ -87,6 +88,10 @@ No Windows (PowerShell/cmd), use `.\mvnw.cmd spring-boot:run`. Com o Maven já i
 
 Espere a linha `Started HelpdeskApplication`. A API fica em **http://localhost:8080**.
 
+O `spring-boot:run` ativa o perfil `dev` (console H2, Swagger e login simulado). Um
+`java -jar` sem perfil sobe com a configuração fechada: sem console, sem Swagger e com o
+login simulado desligado — toda rota protegida responde 401.
+
 ### Terminal 2 — frontend
 
 ```bash
@@ -109,7 +114,7 @@ cd backend && ./mvnw verify
 cd frontend && npm run test
 ```
 
-`./mvnw verify` roda os 151 testes **e** falha o build se a cobertura de `domain` e
+`./mvnw verify` roda os 302 testes **e** falha o build se a cobertura de `domain` e
 `service` cair abaixo de 80%. O relatório HTML fica em
 `backend/target/site/jacoco/index.html`.
 
@@ -239,9 +244,9 @@ branco. O campo JDBC URL vem preenchido errado por padrão — troque para esse 
 ### Usando o Swagger
 
 Todos os endpoints sob `/api`, exceto `/api/auth/**`, exigem o header `X-User-Id`. No
-Swagger, ele aparece como um campo no próprio formulário de cada operação. **Trocar esse
-número é como trocar de usuário logado** — é a forma mais rápida de demonstrar as regras
-de permissão sem sair da tela.
+Swagger, ele é o esquema de autenticação `loginSimulado`: clique em **Authorize**, informe o
+id e todas as operações passam a enviá-lo. **Trocar esse número é como trocar de usuário
+logado** — é a forma mais rápida de demonstrar as regras de permissão sem sair da tela.
 
 ```bash
 # Ana (solicitante) vê só os chamados dela
@@ -303,10 +308,11 @@ curl -s http://localhost:8080/actuator/prometheus | grep "^helpdesk_"
 | `helpdesk_chamados_transicoes_total` | Counter | `de`, `para`, `perfil` |
 | `helpdesk_chamados_por_status` | Gauge | `status` |
 | `helpdesk_chamados_fora_sla` | Gauge | — |
-| `helpdesk_tempo_resolucao_segundos` | Timer | `categoria` |
+| `helpdesk_tempo_resolucao_seconds` (`_count`, `_sum`, `_max`) | Timer | `categoria` |
 
 > Os dois **gauges** são recalculados a cada leitura de `GET /api/dashboard/resumo`. Se
-> você nunca abriu o dashboard, eles valem zero — abra a tela e faça o scrape de novo.
+> você nunca abriu o dashboard, eles valem zero — abra a tela e faça o scrape de novo
+> (ADR-018). Counters e timer só contam operações confirmadas (ADR-024).
 
 ---
 
@@ -331,7 +337,8 @@ padrão do Spring Data (`content`, `totalElements`, `totalPages`, `number`).
 | GET · POST · PUT · DELETE | `/usuarios`, `/usuarios/{id}` | Admin |
 | GET | `/dashboard/resumo` | Atendente, Admin |
 
-`DELETE` é sempre **soft delete**: desativa o registro, nunca o remove.
+`DELETE` é sempre **soft delete**: desativa o registro, nunca o remove. Não há reativação
+no MVP: o `PUT` atualiza os dados, mas não muda `ativa`/`ativo`.
 
 ### Padrão de erro
 
@@ -346,10 +353,13 @@ padrão do Spring Data (`content`, `totalElements`, `totalPages`, `number`).
 
 | HTTP | `erro` | Quando |
 |---|---|---|
-| 400 | `VALIDACAO` | Campo inválido (o corpo ganha a lista `campos`), JSON malformado |
-| 401 | `NAO_AUTENTICADO` | `X-User-Id` ausente, inválido, inexistente ou de usuário inativo |
+| 400 | `VALIDACAO` | Campo inválido (o corpo ganha a lista `campos`), JSON malformado, `sort` por campo inexistente |
+| 401 | `NAO_AUTENTICADO` | `X-User-Id` ausente, inválido, inexistente ou de usuário inativo; login de usuário inexistente ou inativo |
 | 403 | `ACESSO_NEGADO` | Perfil ou relação com o chamado não permitem a ação |
-| 404 | `RECURSO_NAO_ENCONTRADO` | Id inexistente |
+| 404 | `RECURSO_NAO_ENCONTRADO` | Id inexistente ou rota inexistente |
+| 405 | `METODO_NAO_SUPORTADO` | Método HTTP não mapeado na rota |
+| 409 | `CONFLITO` | Violação de integridade ou registro alterado por outra requisição |
+| 415 | `MIDIA_NAO_SUPORTADA` | `Content-Type` diferente de `application/json` |
 | 422 | `TRANSICAO_INVALIDA` | Transição fora da máquina de estados |
 | 422 | `REGRA_NEGOCIO` | Outra regra violada (nome duplicado, categoria inativa...) |
 | 500 | `ERRO_INTERNO` | Exceção não prevista. Nunca vaza stack trace |
@@ -358,27 +368,38 @@ padrão do Spring Data (`content`, `totalElements`, `totalPages`, `number`).
 
 ## 9. Testes
 
-### Backend — 151 testes
+### Backend — 302 testes
 
 | Nível | Arquivo | Cobre |
 |---|---|---|
 | Unitário — domínio | `TransicaoStatusTest` | As 48 combinações de status × perfil; exatamente 8 são válidas |
+| Unitário — domínio | `ChamadoTest`, `PerfilTest` | Operações do agregado (abrir, assumir, alterar status, reabrir) e capacidades de cada perfil |
 | Unitário — domínio | `SlaCalculatorTest` | Prazo, fora do SLA (aberto vs. resolvido tarde), tempo médio com 0, 1 e vários |
-| Unitário — service | `PermissaoServiceTest` | Cada linha da tabela de permissões, incluindo os casos "só os seus" |
+| Unitário — domínio | `PermissaoServiceTest` | Cada linha da tabela de permissões, incluindo os casos "só os seus" |
 | Unitário — service | `ChamadoServiceTest` | Assumir, carimbos com `Clock` fixo e **permissão antes da transição** |
 | Unitário — service | `CategoriaServiceTest`, `UsuarioServiceTest`, `DashboardServiceTest`, `MetricasNegocioTest` | CRUD, soft delete, agregações e métricas |
-| Slice — web | `ChamadoControllerTest` (`@WebMvcTest`) | 400/401/403/404/422 e o formato do JSON de erro |
+| Slice — web | `ChamadoControllerTest` (`@WebMvcTest`), `GlobalExceptionHandlerTest`, `TratamentoDeErrosWebTest` | 400/401/403/404/409/422/500 e o formato do JSON de erro (405 e 415 são cobertos pelo `ErrosHttpApiIT`) |
 | Slice — dados | `ChamadoSpecificationTest` (`@DataJpaTest`) | Solicitante não vê chamados alheios **nem no `count`**; filtros combinados |
 | Integração | `CicloDeVidaChamadoIT` (`@SpringBootTest`) | Abrir → assumir → comentar → resolver → fechar, trocando `X-User-Id` |
+| Integração | `ChamadoContratoApiIT`, `CadastrosApiIT`, `ErrosHttpApiIT` | Contrato JSON de cada rota, cadastros e erros HTTP pela API |
+| Integração | `ConcorrenciaChamadoIT`, `ConcorrenciaUsuarioIT`, `InvariantesUsuarioIT` | 409 na gravação concorrente; último admin e atendente com chamados em andamento, em sequência e sob concorrência |
+| Integração | `ConsultasPorRequisicaoIT`, `DadosPessoaisIT`, `ObservabilidadeIT` | Número de consultas por rota (sem N+1); e-mail fora das rotas públicas e dos logs; métricas e auditoria só do que foi confirmado |
+| Integração — configuração | `ConfiguracaoSemPerfilIT`, `ConfiguracaoDevIT`, `ConfiguracaoProdIT`, `SeedDemonstracaoIT`, `DocumentacaoOpenApiIT`, `MetricasExpostasIT` | O que cada perfil expõe; `prod` recusa o login simulado; seed; especificação OpenAPI; nomes das métricas no Prometheus |
+| Arquitetura | `DependenciaEntreCamadasTest` | Nenhuma dependência proibida entre camadas |
 
 Fixtures vêm dos builders em `backend/src/test/java/br/com/helpdesk/support/` — **nenhum
 teste depende do `data.sql`**, que é fixture de demonstração e muda quando a demo muda.
 
-### Frontend — 49 testes
+### Frontend — 86 testes
 
-`authStore` (helpers de perfil, sessão, `localStorage`), `chamadosStore` (filtros,
-paginação, recarga após ação — com **Axios mockado**), `ChamadoAcoes` (botões visíveis
-por perfil × status) e `SeletorTema` (os três modos, persistência e o `color-scheme`).
+`authStore` (helpers de perfil, sessão, `localStorage`, revalidação), `chamadosStore`
+(filtros, paginação, recarga após ação — com **Axios mockado**), `catalogoStore` (categorias
+ativas × todas, carregamentos separados), `api.js` (URL, headers e 401 que encerra a sessão),
+`boot/sessao.js`, `ChamadoAcoes` (botões visíveis por perfil × status e travados durante a
+ação), `ChamadoDetalhePage` e `SeletorTema` (os três modos, persistência e o `color-scheme`).
+
+Nenhum teste, em nenhuma das suítes, fixa defeito conhecido: os que existiam na baseline da
+modernização foram substituídos por testes de contrato à medida que cada defeito foi tratado.
 
 ---
 
@@ -393,6 +414,7 @@ Cortes de escopo deliberados, documentados na seção 9 de `docs/ARQUITETURA.md`
 | Sem anexos e sem notificações | Fora do escopo | Storage de arquivos; e-mail/websocket |
 | Sem testes E2E | Fora do escopo do MVP | Cypress |
 | Auditoria só em log | Sem tabela extra no MVP | Tabela `chamado_evento` |
+| Sem reativação de cadastro e sem reatribuição de chamado | Seriam funcionalidades novas | Rotas dedicadas (plano de modernização, §14) |
 
 > **Não exponha este sistema fora de `localhost`.** Qualquer pessoa que consiga mandar um
 > header `X-User-Id` vira o usuário que quiser.
@@ -412,7 +434,7 @@ ordem definida pela disciplina:
    [Atividade 2/03_Prompt_Implementacao v3.md](../Atividade%202/03_Prompt_Implementacao%20v3.md).
 
 Nove ambiguidades do documento original foram identificadas e resolvidas durante a geração
-do contexto — cada uma está registrada como ADR na seção 2 de
+do contexto — as que viraram decisão estão registradas como ADR na seção 2 de
 [.ai/architecture.md](../.ai/architecture.md), com a lista completa na seção 8 do mesmo
 arquivo. As principais:
 
@@ -420,3 +442,7 @@ arquivo. As principais:
 - **ADR-016** — reabertura é ação do solicitante, não do atendente.
 - **ADR-017** — 401 existe (o documento não o listava) e é escrito pelo filter.
 - **ADR-018** — os gauges são recalculados na leitura do dashboard.
+
+Depois do MVP, uma modernização auditou o código e corrigiu os achados sem criar
+funcionalidade nova. As decisões dela são as ADRs 019 a 024, e os relatórios de cada fase
+estão em [docs/refactoring/](refactoring/).

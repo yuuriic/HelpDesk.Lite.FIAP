@@ -4,18 +4,12 @@
 
 <script setup>
 import { computed } from 'vue'
+import { STATUS } from 'src/constants/dominio'
 
 const props = defineProps({
   status: { type: String, required: true }
 })
 
-const CONFIGURACAO = {
-  ABERTO: { cor: 'blue-7', rotulo: 'Aberto' },
-  EM_ATENDIMENTO: { cor: 'orange-8', rotulo: 'Em atendimento' },
-  RESOLVIDO: { cor: 'teal-7', rotulo: 'Resolvido' },
-  FECHADO: { cor: 'grey-7', rotulo: 'Fechado' }
-}
-
-const cor = computed(() => CONFIGURACAO[props.status]?.cor ?? 'grey')
-const rotulo = computed(() => CONFIGURACAO[props.status]?.rotulo ?? props.status)
+const cor = computed(() => STATUS[props.status]?.cor ?? 'grey')
+const rotulo = computed(() => STATUS[props.status]?.rotulo ?? props.status)
 </script>

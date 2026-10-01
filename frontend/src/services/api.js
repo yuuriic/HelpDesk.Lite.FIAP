@@ -13,6 +13,7 @@ import { Notify } from 'quasar'
  * Nenhum outro arquivo pode montar URL de backend nem tratar erro de HTTP.
  */
 
+// Padrao do ambiente local; o build sobrescreve com a variavel API_BASE_URL (quasar.config.js).
 const BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080/api'
 
 export const HEADER_USUARIO = 'X-User-Id'
@@ -33,6 +34,17 @@ export function definirUsuarioAtual(id) {
 
 export function usuarioAtual() {
   return usuarioAtualId
+}
+
+/**
+ * Quem cuida da sessao quando a API responde 401 para um usuario logado (EXC-03) -- o
+ * boot/sessao.js registra aqui o "sair e voltar ao login". Fica como callback para este
+ * modulo nao importar o authStore nem o router (dependencia circular).
+ */
+let aoPerderASessao = null
+
+export function definirAoPerderASessao(callback) {
+  aoPerderASessao = callback
 }
 
 /** Id de correlacao por requisicao. O backend devolve o mesmo valor no header da resposta. */
@@ -87,6 +99,12 @@ api.interceptors.response.use(
       caption: `${status ? 'HTTP ' + status + ' · ' : ''}request id: ${requestId}`,
       icon: 'error_outline'
     })
+
+    // 401 com alguem logado: a sessao do frontend nao vale mais (usuario desativado, por
+    // exemplo). Sem ninguem logado -- um login recusado -- nao ha sessao a encerrar.
+    if (status === 401 && usuarioAtualId !== null && aoPerderASessao) {
+      aoPerderASessao()
+    }
 
     return Promise.reject(erro)
   }

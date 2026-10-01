@@ -3,12 +3,12 @@ package br.com.helpdesk.web.controller;
 import br.com.helpdesk.domain.enums.Prioridade;
 import br.com.helpdesk.domain.enums.StatusChamado;
 import br.com.helpdesk.service.ChamadoService;
+import br.com.helpdesk.service.dto.ChamadoResponse;
+import br.com.helpdesk.service.dto.ChamadoResumoResponse;
+import br.com.helpdesk.service.dto.ComentarioResponse;
 import br.com.helpdesk.web.dto.request.AlterarStatusRequest;
 import br.com.helpdesk.web.dto.request.NovoChamadoRequest;
 import br.com.helpdesk.web.dto.request.NovoComentarioRequest;
-import br.com.helpdesk.web.dto.response.ChamadoResponse;
-import br.com.helpdesk.web.dto.response.ChamadoResumoResponse;
-import br.com.helpdesk.web.dto.response.ComentarioResponse;
 import br.com.helpdesk.web.filter.UsuarioAtual;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -74,7 +74,7 @@ public class ChamadoController {
     @Operation(summary = "Abre um chamado", description = "Disponivel para todos os perfis")
     public ResponseEntity<ChamadoResponse> abrir(@Valid @RequestBody NovoChamadoRequest requisicao,
                                                  UsuarioAtual usuarioAtual) {
-        ChamadoResponse criado = chamadoService.abrir(requisicao, usuarioAtual.usuario());
+        ChamadoResponse criado = chamadoService.abrir(requisicao.paraDados(), usuarioAtual.usuario());
         return ResponseEntity.created(java.net.URI.create("/api/chamados/" + criado.id())).body(criado);
     }
 
@@ -108,6 +108,6 @@ public class ChamadoController {
     public ComentarioResponse comentar(@PathVariable Long id,
                                        @Valid @RequestBody NovoComentarioRequest requisicao,
                                        UsuarioAtual usuarioAtual) {
-        return chamadoService.comentar(id, requisicao, usuarioAtual.usuario());
+        return chamadoService.comentar(id, requisicao.texto(), usuarioAtual.usuario());
     }
 }

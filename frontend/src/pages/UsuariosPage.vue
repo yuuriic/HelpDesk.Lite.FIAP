@@ -16,7 +16,7 @@
       <q-table
         :rows="catalogo.usuarios"
         :columns="colunas"
-        :loading="catalogo.carregando"
+        :loading="catalogo.carregandoUsuarios"
         row-key="id"
         flat
         bordered
@@ -26,7 +26,7 @@
       >
         <template #body-cell-perfil="props">
           <q-td :props="props">
-            <q-badge :color="CORES[props.row.perfil]" :label="ROTULOS[props.row.perfil]" />
+            <q-badge :color="PERFIS[props.row.perfil]?.cor" :label="PERFIS[props.row.perfil]?.rotulo" />
           </q-td>
         </template>
 
@@ -120,19 +120,13 @@ import { onMounted, reactive, ref } from 'vue'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from 'stores/auth'
 import { useCatalogoStore } from 'stores/catalogo'
+import { PERFIS, opcoesDe } from 'src/constants/dominio'
 
 const $q = useQuasar()
 const auth = useAuthStore()
 const catalogo = useCatalogoStore()
 
-const ROTULOS = { SOLICITANTE: 'Solicitante', ATENDENTE: 'Atendente', ADMIN: 'Admin' }
-const CORES = { SOLICITANTE: 'blue-7', ATENDENTE: 'teal-7', ADMIN: 'purple-6' }
-
-const OPCOES_PERFIL = [
-  { label: 'Solicitante', value: 'SOLICITANTE' },
-  { label: 'Atendente', value: 'ATENDENTE' },
-  { label: 'Administrador', value: 'ADMIN' }
-]
+const OPCOES_PERFIL = opcoesDe(PERFIS)
 
 const colunas = [
   { name: 'nome', label: 'Nome', field: 'nome', align: 'left' },
@@ -166,6 +160,8 @@ async function salvar() {
     await catalogo.salvarUsuario({ ...emEdicao })
     dialogoAberto.value = false
     $q.notify({ type: 'positive', message: 'Usuario salvo.' })
+  } catch {
+    // Ja notificado pelo interceptor; o dialogo fica aberto para corrigir (EXC-03).
   } finally {
     salvando.value = false
   }
@@ -179,9 +175,8 @@ function confirmarDesativacao(usuario) {
     cancel: { flat: true, noCaps: true, label: 'Cancelar' },
     ok: { unelevated: true, noCaps: true, color: 'negative', label: 'Desativar' },
     persistent: true
-  }).onOk(async () => {
-    await catalogo.desativarUsuario(usuario.id)
-    $q.notify({ type: 'positive', message: 'Usuario desativado.' })
-  })
+  }).onOk(() => catalogo.desativarUsuario(usuario.id)
+    .then(() => $q.notify({ type: 'positive', message: 'Usuario desativado.' }))
+    .catch(() => {})) // ja notificado pelo interceptor (EXC-03)
 }
 </script>

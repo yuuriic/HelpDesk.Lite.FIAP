@@ -161,7 +161,7 @@ resolvido distorceria o tempo médio de resolução e o cálculo de SLA.
 |---|---|---|
 | I1 | Todo chamado tem **exatamente um** solicitante e **uma** categoria | 400 na validação do DTO / 404 se o id não existe |
 | I2 | `atendente` é `null` até alguém assumir; só é preenchido no `assumir` | — |
-| I3 | Só `ATENDENTE` ou `ADMIN` podem ser atendentes de um chamado | 403 |
+| I3 | Só `ATENDENTE` ou `ADMIN` podem ser atendentes de um chamado. Por isso, quem é atendente de chamado `EM_ATENDIMENTO` ou `RESOLVIDO` (reabrível) **não pode ser rebaixado a `SOLICITANTE` nem desativado** até esses chamados serem concluídos | 403 ao assumir; 422 `REGRA_NEGOCIO` no cadastro de usuários. Vale também sob concorrência: rebaixar/desativar e assumir travam a linha do atendente, e o `assumir` decide pelo perfil gravado |
 | I4 | **Comentário é imutável**: não existe endpoint de edição nem de exclusão | rota inexistente |
 | I5 | Categoria **não pode ser excluída** se houver chamados vinculados — só desativada (`ativa = false`) | O `DELETE` é sempre soft delete, então nunca falha por isso |
 | I6 | Usuário é desativado, nunca apagado (`ativo = false`) | idem |
@@ -169,9 +169,15 @@ resolvido distorceria o tempo médio de resolução e o cálculo de SLA.
 | I8 | Um chamado só pode ser aberto em categoria **ativa** | 422 `REGRA_NEGOCIO` |
 | I9 | Usuário **inativo** não autentica | 401 `NAO_AUTENTICADO` |
 | I10 | Não é possível desativar o **próprio** usuário logado | 422 `REGRA_NEGOCIO` |
+| I11 | Sempre existe **ao menos um `ADMIN` ativo**: rebaixar ou desativar o último é recusado, inclusive quando é o próprio admin quem tenta. Vale também sob concorrência: a contagem só é feita com os admins ativos travados | 422 `REGRA_NEGOCIO` |
+| I12 | Duas alterações simultâneas do mesmo chamado não se sobrescrevem (lock otimista por `versao`): a segunda falha | 409 `CONFLITO` |
 
 Por que soft delete (I5/I6): o chamado histórico precisa continuar referenciando quem o
 abriu e em que categoria estava. Hard delete com cascata apagaria histórico.
+
+A desativação é **definitiva no MVP**: não há rota de reativação, e o `PUT` de categoria e de
+usuário não tem campo `ativa`/`ativo` (um valor enviado no corpo é ignorado). Reativar seria
+funcionalidade nova (plano de modernização, §14; REG-03).
 
 ---
 
@@ -251,7 +257,7 @@ e ambos enxergam a base inteira.
 ## 7. Observabilidade das regras
 
 Toda transição de status e toda ação administrativa (CRUD de usuário e de categoria)
-grava **uma linha `INFO`** estruturada, com: `requestId`, `usuarioId`, `perfil`, `acao`,
+**confirmadas** gravam **uma linha `INFO`** estruturada, escrita depois do commit (ADR-024), com: `requestId`, `usuarioId`, `perfil`, `acao`,
 `chamadoId`, `statusDe`, `statusPara`. É isso que reconstrói a história de um chamado
 sem tabela de auditoria no MVP.
 
@@ -259,11 +265,11 @@ Métricas de negócio emitidas (sempre via a classe `MetricasNegocio`):
 
 | Métrica | Tipo | Tags | Quando |
 |---|---|---|---|
-| `helpdesk_chamados_abertos_total` | Counter | `categoria`, `prioridade` | `ChamadoService.abrir` |
-| `helpdesk_chamados_transicoes_total` | Counter | `de`, `para`, `perfil` | `assumir` e `alterarStatus` |
-| `helpdesk_chamados_por_status` | Gauge | `status` | Recalculado a cada leitura do dashboard |
-| `helpdesk_chamados_fora_sla` | Gauge | — | Recalculado a cada leitura do dashboard |
-| `helpdesk_tempo_resolucao_segundos` | Timer | `categoria` | Ao entrar em `RESOLVIDO` |
+| `helpdesk_chamados_abertos_total` | Counter | `categoria`, `prioridade` | `ChamadoService.abrir`, depois do commit |
+| `helpdesk_chamados_transicoes_total` | Counter | `de`, `para`, `perfil` | `assumir` e `alterarStatus`, depois do commit |
+| `helpdesk_chamados_por_status` | Gauge | `status` | Recalculado a cada leitura do dashboard (ADR-018) |
+| `helpdesk_chamados_fora_sla` | Gauge | — | Recalculado a cada leitura do dashboard; inclui os resolvidos depois do prazo (seção 6) |
+| `helpdesk_tempo_resolucao_seconds` | Timer | `categoria` | Ao entrar em `RESOLVIDO`, depois do commit. Nome no Micrometer: `helpdesk_tempo_resolucao` |
 
 ---
 
@@ -292,13 +298,16 @@ Em erro de validação (400) o corpo ganha o campo `campos`, com um item por cam
 
 | HTTP | `erro` | Quando |
 |---|---|---|
-| 400 | `VALIDACAO` | Bean Validation, JSON malformado, tipo de parâmetro errado |
-| 401 | `NAO_AUTENTICADO` | `X-User-Id` ausente, não numérico, inexistente ou de usuário inativo |
+| 400 | `VALIDACAO` | Bean Validation, JSON malformado, tipo de parâmetro errado, `sort` por campo inexistente |
+| 401 | `NAO_AUTENTICADO` | `X-User-Id` ausente, não numérico, inexistente ou de usuário inativo; `POST /auth/login` com usuário inexistente ou inativo. Inexistente e inativo recebem a **mesma** mensagem |
 | 403 | `ACESSO_NEGADO` | Perfil ou relação não permite a ação |
-| 404 | `RECURSO_NAO_ENCONTRADO` | Id inexistente |
+| 404 | `RECURSO_NAO_ENCONTRADO` | Id inexistente ou rota inexistente |
+| 405 | `METODO_NAO_SUPORTADO` | Método HTTP não mapeado na rota (resposta traz o header `Allow`) |
+| 409 | `CONFLITO` | Violação de integridade no banco, registro alterado por outra requisição ou trava de linha não obtida a tempo. A mensagem do banco nunca é repassada |
+| 415 | `MIDIA_NAO_SUPORTADA` | `Content-Type` diferente de `application/json` |
 | 422 | `TRANSICAO_INVALIDA` | Transição fora da máquina de estados |
 | 422 | `REGRA_NEGOCIO` | Outra regra de domínio (nome duplicado, categoria inativa...) |
-| 500 | `ERRO_INTERNO` | Qualquer exceção não prevista. Nunca vaza stack trace |
+| 500 | `ERRO_INTERNO` | Qualquer exceção não prevista. Nunca vaza stack trace. Erro de cliente **nunca** cai aqui |
 
 Mensagens de erro são **em português do Brasil** e voltadas ao usuário final.
 

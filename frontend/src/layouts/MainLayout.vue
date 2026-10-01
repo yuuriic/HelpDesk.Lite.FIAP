@@ -52,18 +52,13 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SeletorTema from 'components/SeletorTema.vue'
 import { useAuthStore } from 'stores/auth'
+import { PERFIS } from 'src/constants/dominio'
 
 const router = useRouter()
 const auth = useAuthStore()
 const menuAberto = ref(false)
 
-const ROTULOS_PERFIL = {
-  SOLICITANTE: 'Solicitante',
-  ATENDENTE: 'Atendente',
-  ADMIN: 'Administrador'
-}
-
-const rotuloPerfil = computed(() => ROTULOS_PERFIL[auth.perfil] ?? auth.perfil)
+const rotuloPerfil = computed(() => PERFIS[auth.perfil]?.rotulo ?? auth.perfil)
 
 /**
  * O menu esconde o que o perfil nao pode acessar. Isso e UX -- o backend recusa de

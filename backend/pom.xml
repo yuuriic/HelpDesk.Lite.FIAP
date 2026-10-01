@@ -84,6 +84,14 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!--
+                      `./mvnw spring-boot:run` sobe o ambiente do MVP (perfil dev). O jar
+                      empacotado nao carrega perfil nenhum: sem parametro, sobe com a
+                      configuracao base, que e a fechada (SEG-02).
+                    -->
+                    <profiles>
+                        <profile>dev</profile>
+                    </profiles>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

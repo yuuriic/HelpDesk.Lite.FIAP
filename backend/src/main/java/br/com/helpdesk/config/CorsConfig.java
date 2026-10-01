@@ -10,8 +10,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * <p>{@code X-Request-Id} precisa estar em {@code exposedHeaders}: sem isso o JavaScript
  * nao consegue ler o header e o q-notify de erro perde a correlacao com o log.</p>
  *
- * <p>Em producao a SPA e a API ficam sob a mesma origem (Nginx) e este bean deixa de ter
- * efeito.</p>
+ * <p>O bean e registrado em todos os perfis, com a origem fixa da SPA local. Em producao a
+ * premissa e SPA e API sob a mesma origem (Nginx), o que dispensa CORS: requisicoes de mesma
+ * origem nao passam por esta regra, e qualquer outra origem continua recusada (DOC-04).</p>
  */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {

@@ -3,44 +3,64 @@ import { ref } from 'vue'
 import categoriasService from 'src/services/categorias'
 import usuariosService from 'src/services/usuarios'
 
-/** Cadastros de apoio: categorias e usuarios. Usado pelos formularios e pelas telas de Admin. */
+/**
+ * Cadastros de apoio: categorias e usuarios. Usado pelos formularios e pelas telas de Admin.
+ *
+ * Duas listas de categoria, de proposito (FE-04): `categorias` tem so as ativas -- e o que o
+ * formulario de chamado e o filtro da listagem oferecem --, `todasCategorias` inclui as
+ * inativas para a tela de administracao. Antes era uma lista so, e salvar uma categoria no
+ * admin enchia o formulario de chamado de categorias inativas.
+ */
 export const useCatalogoStore = defineStore('catalogo', () => {
   const categorias = ref([])
+  const todasCategorias = ref([])
   const usuarios = ref([])
-  const carregando = ref(false)
+  const carregandoCategorias = ref(false)
+  const carregandoUsuarios = ref(false)
 
-  async function carregarCategorias(incluirInativas = false) {
-    carregando.value = true
+  async function buscarCategorias(incluirInativas) {
+    carregandoCategorias.value = true
     try {
       const { data } = await categoriasService.listar(incluirInativas)
-      categorias.value = data
       return data
     } finally {
-      carregando.value = false
+      carregandoCategorias.value = false
     }
+  }
+
+  /** So as ativas: formulario de novo chamado e filtro da listagem. */
+  async function carregarCategorias() {
+    categorias.value = await buscarCategorias(false)
+    return categorias.value
+  }
+
+  /** Ativas e inativas: tela de administracao (so Admin). */
+  async function carregarTodasCategorias() {
+    todasCategorias.value = await buscarCategorias(true)
+    return todasCategorias.value
   }
 
   async function salvarCategoria(categoria) {
     const resposta = categoria.id
       ? await categoriasService.atualizar(categoria.id, categoria)
       : await categoriasService.criar(categoria)
-    await carregarCategorias(true)
+    await carregarTodasCategorias()
     return resposta.data
   }
 
   async function desativarCategoria(id) {
     await categoriasService.desativar(id)
-    await carregarCategorias(true)
+    await carregarTodasCategorias()
   }
 
   async function carregarUsuarios() {
-    carregando.value = true
+    carregandoUsuarios.value = true
     try {
       const { data } = await usuariosService.listar()
       usuarios.value = data
       return data
     } finally {
-      carregando.value = false
+      carregandoUsuarios.value = false
     }
   }
 
@@ -59,9 +79,12 @@ export const useCatalogoStore = defineStore('catalogo', () => {
 
   return {
     categorias,
+    todasCategorias,
     usuarios,
-    carregando,
+    carregandoCategorias,
+    carregandoUsuarios,
     carregarCategorias,
+    carregarTodasCategorias,
     salvarCategoria,
     desativarCategoria,
     carregarUsuarios,

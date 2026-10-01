@@ -1,7 +1,7 @@
 package br.com.helpdesk.service.mapper;
 
 import br.com.helpdesk.domain.model.Categoria;
-import br.com.helpdesk.web.dto.response.CategoriaResponse;
+import br.com.helpdesk.service.dto.CategoriaResponse;
 import org.springframework.stereotype.Component;
 
 @Component

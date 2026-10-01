@@ -6,10 +6,8 @@ import br.com.helpdesk.domain.exception.TransicaoInvalidaException;
 
 import java.util.Collections;
 import java.util.EnumSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import static br.com.helpdesk.domain.enums.StatusChamado.ABERTO;
 import static br.com.helpdesk.domain.enums.StatusChamado.EM_ATENDIMENTO;
@@ -50,11 +48,11 @@ public class TransicaoStatus {
         Transicao aresta = TABELA.stream()
                 .filter(t -> t.de() == de && t.para() == para)
                 .findFirst()
-                .orElseThrow(() -> new TransicaoInvalidaException(de, para,
+                .orElseThrow(() -> new TransicaoInvalidaException(
                         "Chamado %s nao pode ir direto para %s".formatted(de, para)));
 
         if (!aresta.perfis().contains(perfil)) {
-            throw new TransicaoInvalidaException(de, para,
+            throw new TransicaoInvalidaException(
                     "O perfil %s nao executa a transicao de %s para %s".formatted(perfil, de, para));
         }
     }
@@ -63,15 +61,6 @@ public class TransicaoStatus {
     public boolean permitida(StatusChamado de, StatusChamado para, Perfil perfil) {
         return TABELA.stream()
                 .anyMatch(t -> t.de() == de && t.para() == para && t.perfis().contains(perfil));
-    }
-
-    /** Status alcancaveis a partir de {@code de} pelo perfil informado. */
-    public Set<StatusChamado> proximosStatus(StatusChamado de, Perfil perfil) {
-        return TABELA.stream()
-                .filter(t -> t.de() == de && t.perfis().contains(perfil))
-                .map(Transicao::para)
-                .collect(Collectors.collectingAndThen(
-                        Collectors.toCollection(LinkedHashSet::new), Collections::unmodifiableSet));
     }
 
     /**

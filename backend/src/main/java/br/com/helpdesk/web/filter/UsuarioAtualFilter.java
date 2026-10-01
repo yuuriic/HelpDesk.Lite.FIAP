@@ -1,5 +1,7 @@
 package br.com.helpdesk.web.filter;
 
+import br.com.helpdesk.config.AutenticacaoSimuladaConfig;
+import br.com.helpdesk.domain.exception.NaoAutenticadoException;
 import br.com.helpdesk.domain.model.Usuario;
 import br.com.helpdesk.repository.UsuarioRepository;
 import br.com.helpdesk.web.exception.ErroResponse;
@@ -12,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -30,6 +33,10 @@ import java.util.Optional;
  * usuario inexistente ou para um usuario inativo.</p>
  *
  * <p>Este filtro <b>nao decide permissao</b> -- so identifica quem esta chamando.</p>
+ *
+ * <p>So funciona com o login simulado ligado ({@code helpdesk.auth.simulada=true}, perfis dev e
+ * test). Desligado -- configuracao base e prod --, toda rota protegida responde 401 sem nem
+ * olhar o header: nenhum ambiente aceita um id no header como identidade por engano.</p>
  *
  * <p>Como ele roda antes do DispatcherServlet, o {@code @RestControllerAdvice} nao alcanca
  * as excecoes daqui: o 401 e serializado na mao, no mesmo formato dos demais erros
@@ -50,6 +57,7 @@ public class UsuarioAtualFilter extends OncePerRequestFilter {
 
     private final UsuarioRepository usuarioRepository;
     private final ObjectMapper objectMapper;
+    private final Environment ambiente;
 
     /** So protege /api/**, menos /api/auth/**. Swagger, H2 e Actuator ficam de fora. */
     @Override
@@ -65,6 +73,12 @@ public class UsuarioAtualFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
+        if (!AutenticacaoSimuladaConfig.habilitada(ambiente)) {
+            responder401(response, "Autenticacao nao disponivel neste ambiente",
+                    "login simulado desligado (" + AutenticacaoSimuladaConfig.PROPRIEDADE + "=false)");
+            return;
+        }
+
         String header = request.getHeader(HEADER_USER_ID);
         if (!StringUtils.hasText(header)) {
             responder401(response, "Header " + HEADER_USER_ID + " ausente");
@@ -79,15 +93,17 @@ public class UsuarioAtualFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Inexistente e inativo: mesma resposta publica (nao revela quais ids existem);
+        // o motivo real fica so no log.
         Optional<Usuario> encontrado = usuarioRepository.findById(usuarioId);
         if (encontrado.isEmpty()) {
-            responder401(response, "Usuario " + usuarioId + " nao encontrado");
+            responder401(response, NaoAutenticadoException.MENSAGEM_PADRAO, "usuario " + usuarioId + " nao encontrado");
             return;
         }
 
         Usuario usuario = encontrado.get();
         if (!usuario.isAtivo()) {
-            responder401(response, "Usuario " + usuarioId + " esta inativo");
+            responder401(response, NaoAutenticadoException.MENSAGEM_PADRAO, "usuario " + usuarioId + " esta inativo");
             return;
         }
 
@@ -101,7 +117,12 @@ public class UsuarioAtualFilter extends OncePerRequestFilter {
     }
 
     private void responder401(HttpServletResponse response, String mensagem) throws IOException {
-        log.warn("Requisicao nao autenticada: {}", mensagem);
+        responder401(response, mensagem, mensagem);
+    }
+
+    /** {@code mensagem} vai para o cliente; {@code detalheLog}, so para o log WARN. */
+    private void responder401(HttpServletResponse response, String mensagem, String detalheLog) throws IOException {
+        log.warn("Requisicao nao autenticada: {}", detalheLog);
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");

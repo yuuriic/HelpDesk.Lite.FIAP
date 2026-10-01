@@ -22,9 +22,4 @@ public enum StatusChamado {
     public boolean emAndamento() {
         return this == ABERTO || this == EM_ATENDIMENTO;
     }
-
-    /** Status em que o chamado ja foi resolvido pelo atendente. */
-    public boolean concluido() {
-        return this == RESOLVIDO || this == FECHADO;
-    }
 }

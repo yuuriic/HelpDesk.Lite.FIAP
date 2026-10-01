@@ -22,6 +22,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
@@ -44,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * A regra de negocio em si e testada nos unitarios; aqui so interessa a traducao para HTTP.</p>
  */
 @WebMvcTest(ChamadoController.class)
+@ActiveProfiles("test")
 @Import(UsuarioAtualArgumentResolver.class)
 @DisplayName("ChamadoController (fatia web)")
 class ChamadoControllerTest {
@@ -173,8 +175,7 @@ class ChamadoControllerTest {
     @Test
     void deveMapearTransicaoInvalidaPara422() throws Exception {
         when(chamadoService.alterarStatus(anyLong(), any(), any()))
-                .thenThrow(new TransicaoInvalidaException(StatusChamado.ABERTO, StatusChamado.RESOLVIDO,
-                        "Chamado ABERTO nao pode ir direto para RESOLVIDO"));
+                .thenThrow(new TransicaoInvalidaException("Chamado ABERTO nao pode ir direto para RESOLVIDO"));
 
         mockMvc.perform(patch("/api/chamados/1/status")
                         .header(HEADER_USUARIO, "2")

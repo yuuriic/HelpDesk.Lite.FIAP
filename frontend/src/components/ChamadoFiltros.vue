@@ -60,6 +60,7 @@
 
 <script setup>
 import { computed, reactive, watch } from 'vue'
+import { PRIORIDADES, STATUS, opcoesDe } from 'src/constants/dominio'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -69,18 +70,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'filtrar', 'limpar'])
 
-const OPCOES_STATUS = [
-  { label: 'Aberto', value: 'ABERTO' },
-  { label: 'Em atendimento', value: 'EM_ATENDIMENTO' },
-  { label: 'Resolvido', value: 'RESOLVIDO' },
-  { label: 'Fechado', value: 'FECHADO' }
-]
-
-const OPCOES_PRIORIDADE = [
-  { label: 'Baixa', value: 'BAIXA' },
-  { label: 'Media', value: 'MEDIA' },
-  { label: 'Alta', value: 'ALTA' }
-]
+const OPCOES_STATUS = opcoesDe(STATUS)
+const OPCOES_PRIORIDADE = opcoesDe(PRIORIDADES)
 
 const local = reactive({ ...props.modelValue })
 

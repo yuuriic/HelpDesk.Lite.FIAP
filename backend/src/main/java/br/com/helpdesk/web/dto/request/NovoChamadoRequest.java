@@ -1,6 +1,7 @@
 package br.com.helpdesk.web.dto.request;
 
 import br.com.helpdesk.domain.enums.Prioridade;
+import br.com.helpdesk.service.dto.DadosNovoChamado;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,4 +27,9 @@ public record NovoChamadoRequest(
         @Schema(example = "ALTA")
         @NotNull(message = "e obrigatoria")
         Prioridade prioridade) {
+
+    /** Converte para a entrada do caso de uso: o service nao conhece este request (ARQ-01). */
+    public DadosNovoChamado paraDados() {
+        return new DadosNovoChamado(titulo, descricao, categoriaId, prioridade);
+    }
 }

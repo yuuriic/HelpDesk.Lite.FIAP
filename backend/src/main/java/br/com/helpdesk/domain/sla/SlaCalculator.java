@@ -1,8 +1,7 @@
-package br.com.helpdesk.service;
+package br.com.helpdesk.domain.sla;
 
 import br.com.helpdesk.domain.model.Chamado;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -22,7 +21,6 @@ import java.util.Collection;
  * num teste com {@code new SlaCalculator(Clock.fixed(...))}, o que torna cada cenario
  * deterministico (ADR-013).</p>
  */
-@Service
 @RequiredArgsConstructor
 public class SlaCalculator {
 
@@ -41,12 +39,7 @@ public class SlaCalculator {
      * mais antigo que seja: a segunda clausula olha {@code resolvidoEm}, nao "agora".</p>
      */
     public boolean foraDoSla(Chamado chamado) {
-        Instant prazo = prazo(chamado);
-
-        if (chamado.getResolvidoEm() != null) {
-            return chamado.getResolvidoEm().isAfter(prazo);
-        }
-        return chamado.getStatus().emAndamento() && Instant.now(clock).isAfter(prazo);
+        return situacao(chamado).foraDoSla();
     }
 
     /**
@@ -54,13 +47,30 @@ public class SlaCalculator {
      * Serve para ordenar a lista do dashboard do mais atrasado para o menos.
      */
     public Duration atraso(Chamado chamado) {
-        if (!foraDoSla(chamado)) {
-            return Duration.ZERO;
-        }
-        Instant referencia = chamado.getResolvidoEm() != null
-                ? chamado.getResolvidoEm()
-                : Instant.now(clock);
-        return Duration.between(prazo(chamado), referencia);
+        return situacao(chamado).atraso();
+    }
+
+    /**
+     * Prazo, "fora do SLA" e atraso numa avaliacao so (ARQ-04). E a unica implementacao da
+     * regra: {@link #foraDoSla} e {@link #atraso} delegam para ca. Le o relogio uma vez, entao as
+     * tres respostas se referem ao mesmo instante.
+     *
+     * <p>Quem precisa de mais de uma resposta para o mesmo chamado -- o mapper e o dashboard --
+     * chama este metodo uma vez em vez de reavaliar a regra a cada pergunta.</p>
+     */
+    public SituacaoSla situacao(Chamado chamado) {
+        Instant prazo = prazo(chamado);
+        Instant resolvidoEm = chamado.getResolvidoEm();
+        Instant agora = Instant.now(clock);
+
+        boolean foraDoSla = resolvidoEm != null
+                ? resolvidoEm.isAfter(prazo)
+                : chamado.getStatus().emAndamento() && agora.isAfter(prazo);
+        Duration atraso = foraDoSla
+                ? Duration.between(prazo, resolvidoEm != null ? resolvidoEm : agora)
+                : Duration.ZERO;
+
+        return new SituacaoSla(prazo, foraDoSla, atraso);
     }
 
     /**

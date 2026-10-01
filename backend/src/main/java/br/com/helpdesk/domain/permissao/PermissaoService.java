@@ -1,4 +1,4 @@
-package br.com.helpdesk.service;
+package br.com.helpdesk.domain.permissao;
 
 import br.com.helpdesk.domain.enums.Perfil;
 import br.com.helpdesk.domain.enums.StatusChamado;
@@ -7,9 +7,6 @@ import br.com.helpdesk.domain.model.Chamado;
 import br.com.helpdesk.domain.model.Usuario;
 import br.com.helpdesk.domain.state.TransicaoStatus;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
-import java.util.Set;
 
 /**
  * A tabela de permissoes da secao 3 do documento, traduzida em codigo (ADR-004).
@@ -21,8 +18,13 @@ import java.util.Set;
  * e assunto da {@link TransicaoStatus}, que roda depois e devolve 422. Por isso um
  * atendente que tenta agir no chamado de outro recebe 403 e nao descobre em que estado
  * aquele chamado esta.</p>
+ *
+ * <p>As regras perguntam a <b>capacidade</b> do perfil ({@link Perfil#enxergaTodosOsChamados()},
+ * {@link Perfil#atendeChamados()}, {@link Perfil#gerenciaCadastros()}) em vez de comparar
+ * identidade (DOM-03). A unica regra que depende do perfil <i>e</i> da relacao com o chamado
+ * -- alterar status "so nos seus" -- e um {@code switch} exaustivo: um perfil novo nao compila
+ * ate alguem decidir qual relacao ele exige.</p>
  */
-@Service
 @RequiredArgsConstructor
 public class PermissaoService {
 
@@ -34,19 +36,20 @@ public class PermissaoService {
     }
 
     /**
-     * Ver o chamado: o solicitante so enxerga os proprios.
+     * Ver o chamado: quem nao enxerga a base inteira so ve os proprios.
      *
-     * <p>Na listagem a mesma regra e aplicada na query, pela ChamadoSpecification.</p>
+     * <p>Na listagem a mesma pergunta ({@link Perfil#enxergaTodosOsChamados()}) entra na query,
+     * pela ChamadoSpecification (ARQ-03).</p>
      */
     public void verificarVisualizacao(Usuario usuario, Chamado chamado) {
-        if (usuario.getPerfil() == Perfil.SOLICITANTE && !chamado.foiSolicitadoPor(usuario.getId())) {
+        if (!podeVer(usuario, chamado)) {
             throw new AcessoNegadoException("Voce so pode acessar os chamados que abriu");
         }
     }
 
-    /** Assumir: apenas atendente e admin. */
-    public void verificarAssuncao(Usuario usuario, Chamado chamado) {
-        if (usuario.getPerfil() == Perfil.SOLICITANTE) {
+    /** Assumir: so quem atende chamados (atendente e admin). */
+    public void verificarAssuncao(Usuario usuario) {
+        if (!usuario.getPerfil().atendeChamados()) {
             throw new AcessoNegadoException("Apenas atendentes podem assumir chamados");
         }
     }
@@ -65,44 +68,57 @@ public class PermissaoService {
     public void verificarAlteracaoStatus(Usuario usuario, Chamado chamado, StatusChamado novoStatus) {
         Perfil perfil = usuario.getPerfil();
 
-        Set<Perfil> perfisQuePodem = transicaoStatus.perfisQueLevamA(novoStatus);
-        if (!perfisQuePodem.contains(perfil)) {
+        if (!transicaoStatus.perfisQueLevamA(novoStatus).contains(perfil)) {
             throw new AcessoNegadoException(
                     "O perfil %s nao pode marcar um chamado como %s".formatted(perfil, novoStatus));
         }
 
-        if (perfil == Perfil.ATENDENTE && !chamado.eAtendidoPor(usuario.getId())) {
-            throw new AcessoNegadoException("Voce so pode alterar o status dos chamados que atende");
-        }
-        if (perfil == Perfil.SOLICITANTE && !chamado.foiSolicitadoPor(usuario.getId())) {
-            throw new AcessoNegadoException("Voce so pode alterar o status dos chamados que abriu");
+        switch (perfil) {
+            case ADMIN -> {
+                // Sem restricao de relacao com o chamado.
+            }
+            case ATENDENTE -> {
+                if (!chamado.eAtendidoPor(usuario.getId())) {
+                    throw new AcessoNegadoException("Voce so pode alterar o status dos chamados que atende");
+                }
+            }
+            case SOLICITANTE -> {
+                if (!chamado.foiSolicitadoPor(usuario.getId())) {
+                    throw new AcessoNegadoException("Voce so pode alterar o status dos chamados que abriu");
+                }
+            }
         }
     }
 
-    /** Comentar segue a mesma visibilidade da leitura do chamado. */
+    /** Comentar segue a mesma visibilidade da leitura do chamado (ARQ-03). */
     public void verificarComentario(Usuario usuario, Chamado chamado) {
-        if (usuario.getPerfil() == Perfil.SOLICITANTE && !chamado.foiSolicitadoPor(usuario.getId())) {
+        if (!podeVer(usuario, chamado)) {
             throw new AcessoNegadoException("Voce so pode comentar nos chamados que abriu");
         }
     }
 
     public void verificarGestaoCategorias(Usuario usuario) {
-        exigirAdmin(usuario, "gerenciar categorias");
+        exigirGestaoDeCadastros(usuario, "gerenciar categorias");
     }
 
     public void verificarGestaoUsuarios(Usuario usuario) {
-        exigirAdmin(usuario, "gerenciar usuarios");
+        exigirGestaoDeCadastros(usuario, "gerenciar usuarios");
     }
 
-    /** Dashboard: atendente e admin. O solicitante nao ve indicadores da base inteira. */
+    /** Dashboard: indicadores da base inteira, entao so para quem enxerga a base inteira. */
     public void verificarDashboard(Usuario usuario) {
-        if (usuario.getPerfil() == Perfil.SOLICITANTE) {
+        if (!usuario.getPerfil().enxergaTodosOsChamados()) {
             throw new AcessoNegadoException("Apenas atendentes e administradores veem o dashboard");
         }
     }
 
-    private void exigirAdmin(Usuario usuario, String acao) {
-        if (usuario.getPerfil() != Perfil.ADMIN) {
+    /** Regra unica de visibilidade do detalhe e dos comentarios. */
+    private static boolean podeVer(Usuario usuario, Chamado chamado) {
+        return usuario.getPerfil().enxergaTodosOsChamados() || chamado.foiSolicitadoPor(usuario.getId());
+    }
+
+    private void exigirGestaoDeCadastros(Usuario usuario, String acao) {
+        if (!usuario.getPerfil().gerenciaCadastros()) {
             throw new AcessoNegadoException("Apenas administradores podem " + acao);
         }
     }

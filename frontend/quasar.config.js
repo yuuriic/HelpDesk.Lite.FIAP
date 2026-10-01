@@ -4,7 +4,7 @@
  */
 export default function () {
   return {
-    boot: ['tema', 'axios'],
+    boot: ['tema', 'sessao'],
 
     css: ['app.scss'],
 
@@ -16,10 +16,9 @@ export default function () {
         node: 'node20'
       },
       vueRouterMode: 'history',
-      // Unico lugar que define a URL do backend. O src/services/api.js le daqui.
-      env: {
-        API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:8080/api'
-      }
+      // Repassa API_BASE_URL so quando definida no build; o padrao local fica num lugar so,
+      // o src/services/api.js (FE-05).
+      env: process.env.API_BASE_URL ? { API_BASE_URL: process.env.API_BASE_URL } : {}
     },
 
     devServer: {

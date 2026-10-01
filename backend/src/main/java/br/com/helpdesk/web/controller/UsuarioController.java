@@ -1,8 +1,8 @@
 package br.com.helpdesk.web.controller;
 
 import br.com.helpdesk.service.UsuarioService;
+import br.com.helpdesk.service.dto.UsuarioResponse;
 import br.com.helpdesk.web.dto.request.UsuarioRequest;
-import br.com.helpdesk.web.dto.response.UsuarioResponse;
 import br.com.helpdesk.web.filter.UsuarioAtual;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,7 +40,7 @@ public class UsuarioController {
     @Operation(summary = "Cria um usuario (Admin)")
     public UsuarioResponse criar(@Valid @RequestBody UsuarioRequest requisicao,
                                  UsuarioAtual usuarioAtual) {
-        return usuarioService.criar(requisicao, usuarioAtual.usuario());
+        return usuarioService.criar(requisicao.paraDados(), usuarioAtual.usuario());
     }
 
     @PutMapping("/{id}")
@@ -48,7 +48,7 @@ public class UsuarioController {
     public UsuarioResponse atualizar(@PathVariable Long id,
                                      @Valid @RequestBody UsuarioRequest requisicao,
                                      UsuarioAtual usuarioAtual) {
-        return usuarioService.atualizar(id, requisicao, usuarioAtual.usuario());
+        return usuarioService.atualizar(id, requisicao.paraDados(), usuarioAtual.usuario());
     }
 
     @DeleteMapping("/{id}")

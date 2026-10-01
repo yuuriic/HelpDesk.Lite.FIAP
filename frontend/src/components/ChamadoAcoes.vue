@@ -6,8 +6,8 @@
       :color="acao.cor"
       :icon="acao.icone"
       :label="acao.rotulo"
-      :loading="processando === acao.chave"
-      :disable="processando !== null"
+      :loading="processando && acaoClicada === acao.chave"
+      :disable="processando"
       :data-teste="`acao-${acao.chave}`"
       unelevated
       no-caps
@@ -24,78 +24,80 @@
 import { computed, ref } from 'vue'
 
 /**
- * Botoes de acao do chamado, filtrados por perfil + status.
+ * Botoes de acao do chamado, filtrados por perfil + status + relacao com o chamado.
  *
- * Espelha a maquina de estados do backend (secao 3 de .ai/business-rules.md). Esconder o
- * botao e so UX: quem recusa de verdade e o backend, com 403 ou 422.
+ * Esconder o botao e so UX: quem recusa de verdade e o backend, com 403 ou 422.
  */
 const props = defineProps({
   chamado: { type: Object, required: true },
   perfil: { type: String, required: true },
-  usuarioId: { type: [Number, String], default: null }
+  usuarioId: { type: [Number, String], default: null },
+  /**
+   * A acao emitida ainda esta em andamento? Quem sabe e o pai, que faz a requisicao: o
+   * `emit` nao espera o handler, entao o componente sozinho nao tem como saber (FE-02).
+   * Enquanto `true`, todos os botoes ficam travados e o clicado mostra o loading.
+   */
+  processando: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['assumir', 'alterar-status'])
 
-const processando = ref(null)
+/**
+ * As arestas da maquina de estados, uma por linha, NA MESMA ORDEM e com os MESMOS perfis
+ * da tabela do backend (TransicaoStatus.TABELA). Mudou la, muda aqui -- e so aqui (FE-01).
+ *
+ * `evento` e a forma de pedir a transicao a API: assumir tem rota propria, as demais vao
+ * pela rota de status. A ordem da tabela e a ordem dos botoes na tela.
+ */
+const ARESTAS = [
+  { de: 'ABERTO', para: 'EM_ATENDIMENTO', perfis: ['ATENDENTE', 'ADMIN'], evento: 'assumir',
+    chave: 'assumir', rotulo: 'Assumir', icone: 'assignment_ind', cor: 'primary' },
+  { de: 'EM_ATENDIMENTO', para: 'RESOLVIDO', perfis: ['ATENDENTE', 'ADMIN'], evento: 'alterar-status',
+    chave: 'resolver', rotulo: 'Resolver', icone: 'task_alt', cor: 'teal-7' },
+  { de: 'RESOLVIDO', para: 'FECHADO', perfis: ['SOLICITANTE', 'ADMIN'], evento: 'alterar-status',
+    chave: 'fechar', rotulo: 'Confirmar e fechar', icone: 'check_circle', cor: 'positive' },
+  { de: 'RESOLVIDO', para: 'EM_ATENDIMENTO', perfis: ['SOLICITANTE', 'ADMIN'], evento: 'alterar-status',
+    chave: 'reabrir', rotulo: 'Reabrir', icone: 'restart_alt', cor: 'orange-8' }
+]
 
-const ehAdmin = computed(() => props.perfil === 'ADMIN')
-const ehAtendente = computed(() => props.perfil === 'ATENDENTE')
-const ehSolicitante = computed(() => props.perfil === 'SOLICITANTE')
+/**
+ * Relacao com o chamado que cada perfil precisa ter para ALTERAR O STATUS -- a mesma regra do
+ * PermissaoService.verificarAlteracaoStatus: o admin age em qualquer chamado; o atendente, so
+ * no que atende; o solicitante, so no que abriu. Assumir nao exige relacao (verificarAssuncao).
+ */
+const RELACAO_PARA_ALTERAR_STATUS = {
+  ADMIN: () => true,
+  ATENDENTE: (chamado, usuarioId) => mesmoId(chamado.atendente?.id, usuarioId),
+  SOLICITANTE: (chamado, usuarioId) => mesmoId(chamado.solicitante?.id, usuarioId)
+}
 
-const souOSolicitante = computed(
-  () => String(props.chamado?.solicitante?.id) === String(props.usuarioId)
-)
-const souOAtendente = computed(
-  () => props.chamado?.atendente != null &&
-    String(props.chamado.atendente.id) === String(props.usuarioId)
-)
+/** Compara como texto: o id da rota chega string, o da API chega numero. */
+function mesmoId(a, b) {
+  return a != null && String(a) === String(b)
+}
 
-const acoes = computed(() => {
-  const status = props.chamado?.status
-  const disponiveis = []
+function cumpreRelacao(aresta) {
+  if (aresta.evento === 'assumir') return true
+  const relacao = RELACAO_PARA_ALTERAR_STATUS[props.perfil]
+  return relacao !== undefined && relacao(props.chamado, props.usuarioId)
+}
 
-  // ABERTO -> EM_ATENDIMENTO: atendente ou admin.
-  if (status === 'ABERTO' && (ehAtendente.value || ehAdmin.value)) {
-    disponiveis.push({
-      chave: 'assumir', rotulo: 'Assumir', icone: 'assignment_ind', cor: 'primary', evento: 'assumir'
-    })
-  }
+const acoes = computed(() => ARESTAS.filter((aresta) =>
+  aresta.de === props.chamado?.status &&
+  aresta.perfis.includes(props.perfil) &&
+  cumpreRelacao(aresta)
+))
 
-  // EM_ATENDIMENTO -> RESOLVIDO: o atendente responsavel, ou o admin.
-  if (status === 'EM_ATENDIMENTO' && (ehAdmin.value || (ehAtendente.value && souOAtendente.value))) {
-    disponiveis.push({
-      chave: 'resolver', rotulo: 'Resolver', icone: 'task_alt', cor: 'teal-7',
-      evento: 'alterar-status', status: 'RESOLVIDO'
-    })
-  }
+/** So para saber em qual botao mostrar o loading enquanto o pai processa. */
+const acaoClicada = ref(null)
 
-  // RESOLVIDO -> FECHADO e RESOLVIDO -> EM_ATENDIMENTO: o solicitante dono, ou o admin.
-  if (status === 'RESOLVIDO' && (ehAdmin.value || (ehSolicitante.value && souOSolicitante.value))) {
-    disponiveis.push({
-      chave: 'fechar', rotulo: 'Confirmar e fechar', icone: 'check_circle', cor: 'positive',
-      evento: 'alterar-status', status: 'FECHADO'
-    })
-    disponiveis.push({
-      chave: 'reabrir', rotulo: 'Reabrir', icone: 'restart_alt', cor: 'orange-8',
-      evento: 'alterar-status', status: 'EM_ATENDIMENTO'
-    })
-  }
-
-  // FECHADO e estado final: nenhuma acao.
-  return disponiveis
-})
-
-async function executar(acao) {
-  processando.value = acao.chave
-  try {
-    if (acao.evento === 'assumir') {
-      emit('assumir')
-    } else {
-      emit('alterar-status', acao.status)
-    }
-  } finally {
-    processando.value = null
+function executar(acao) {
+  if (props.processando) return
+  acaoClicada.value = acao.chave
+  if (acao.evento === 'assumir') {
+    emit('assumir')
+  } else {
+    emit('alterar-status', acao.para)
   }
 }
 </script>

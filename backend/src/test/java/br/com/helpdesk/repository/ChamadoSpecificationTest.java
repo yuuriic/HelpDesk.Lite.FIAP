@@ -73,18 +73,18 @@ class ChamadoSpecificationTest {
 
     private Chamado salvar(Usuario solicitante, Usuario atendente, Categoria categoria,
                            StatusChamado status, Prioridade prioridade) {
-        Chamado chamado = ChamadoBuilder.aberto()
+        // DOM-01: sem setters, o carimbo de resolucao entra na reconstituicao, e nao depois.
+        ChamadoBuilder builder = ChamadoBuilder.aberto()
                 .comStatus(status)
                 .comPrioridade(prioridade)
                 .comCategoria(categoria)
                 .comSolicitante(solicitante)
                 .comAtendente(atendente)
-                .criadoEm(Fixtures.horasAtras(2))
-                .buildSemId();
+                .criadoEm(Fixtures.horasAtras(2));
         if (status == StatusChamado.RESOLVIDO) {
-            chamado.setResolvidoEm(Fixtures.horasAtras(1));
+            builder.resolvidoEm(Fixtures.horasAtras(1));
         }
-        return chamadoRepository.save(chamado);
+        return chamadoRepository.save(builder.buildSemId());
     }
 
     private Page<Chamado> buscar(Usuario usuario, StatusChamado status, Prioridade prioridade,

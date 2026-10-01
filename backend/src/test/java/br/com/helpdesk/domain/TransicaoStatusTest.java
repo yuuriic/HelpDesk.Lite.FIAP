@@ -121,15 +121,6 @@ class TransicaoStatusTest {
                     .isInstanceOf(TransicaoInvalidaException.class)
                     .hasMessageContaining("SOLICITANTE");
         }
-
-        @Test
-        void deveExporOsStatusDaTransicaoNaExcecao() {
-            assertThatThrownBy(() -> transicaoStatus.validar(ABERTO, RESOLVIDO, ADMIN))
-                    .isInstanceOfSatisfying(TransicaoInvalidaException.class, e -> {
-                        assertThat(e.getDe()).isEqualTo(ABERTO);
-                        assertThat(e.getPara()).isEqualTo(RESOLVIDO);
-                    });
-        }
     }
 
     @Nested
@@ -155,22 +146,6 @@ class TransicaoStatusTest {
     @Nested
     @DisplayName("consultas auxiliares")
     class ConsultasAuxiliares {
-
-        @Test
-        void deveListarOsProximosStatusDeUmAtendente() {
-            assertThat(transicaoStatus.proximosStatus(EM_ATENDIMENTO, ATENDENTE))
-                    .containsExactly(RESOLVIDO);
-            assertThat(transicaoStatus.proximosStatus(ABERTO, ATENDENTE))
-                    .containsExactly(EM_ATENDIMENTO);
-            assertThat(transicaoStatus.proximosStatus(RESOLVIDO, ATENDENTE)).isEmpty();
-        }
-
-        @Test
-        void deveListarOsProximosStatusDeUmSolicitante() {
-            assertThat(transicaoStatus.proximosStatus(RESOLVIDO, SOLICITANTE))
-                    .containsExactlyInAnyOrder(FECHADO, EM_ATENDIMENTO);
-            assertThat(transicaoStatus.proximosStatus(ABERTO, SOLICITANTE)).isEmpty();
-        }
 
         @Test
         @DisplayName("ninguem consegue levar um chamado de volta para ABERTO")

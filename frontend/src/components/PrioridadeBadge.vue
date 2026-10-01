@@ -6,18 +6,13 @@
 
 <script setup>
 import { computed } from 'vue'
+import { PRIORIDADES } from 'src/constants/dominio'
 
 const props = defineProps({
   prioridade: { type: String, required: true }
 })
 
-const CONFIGURACAO = {
-  BAIXA: { cor: 'green-7', rotulo: 'Baixa', icone: 'south' },
-  MEDIA: { cor: 'amber-8', rotulo: 'Media', icone: 'drag_handle' },
-  ALTA: { cor: 'red-7', rotulo: 'Alta', icone: 'north' }
-}
-
-const cor = computed(() => CONFIGURACAO[props.prioridade]?.cor ?? 'grey')
-const rotulo = computed(() => CONFIGURACAO[props.prioridade]?.rotulo ?? props.prioridade)
-const icone = computed(() => CONFIGURACAO[props.prioridade]?.icone ?? 'help_outline')
+const cor = computed(() => PRIORIDADES[props.prioridade]?.cor ?? 'grey')
+const rotulo = computed(() => PRIORIDADES[props.prioridade]?.rotulo ?? props.prioridade)
+const icone = computed(() => PRIORIDADES[props.prioridade]?.icone ?? 'help_outline')
 </script>

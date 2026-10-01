@@ -45,18 +45,6 @@ public class Usuario {
     @Builder.Default
     private boolean ativo = true;
 
-    public boolean isAdmin() {
-        return perfil == Perfil.ADMIN;
-    }
-
-    public boolean isAtendente() {
-        return perfil == Perfil.ATENDENTE;
-    }
-
-    public boolean isSolicitante() {
-        return perfil == Perfil.SOLICITANTE;
-    }
-
     /** Identidade pelo id -- nunca por associacoes, que sao LAZY. */
     @Override
     public boolean equals(Object outro) {

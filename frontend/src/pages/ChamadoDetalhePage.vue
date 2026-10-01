@@ -43,24 +43,24 @@
             </div>
             <div class="col-6 col-md-3">
               <div class="text-caption text-grey-7">Prazo do SLA</div>
-              <div>{{ formatar(chamado.prazoSla) }}</div>
+              <div>{{ formatarDataHora(chamado.prazoSla) }}</div>
             </div>
 
             <div class="col-6 col-md-3">
               <div class="text-caption text-grey-7">Aberto em</div>
-              <div>{{ formatar(chamado.criadoEm) }}</div>
+              <div>{{ formatarDataHora(chamado.criadoEm) }}</div>
             </div>
             <div class="col-6 col-md-3">
               <div class="text-caption text-grey-7">Atualizado em</div>
-              <div>{{ formatar(chamado.atualizadoEm) }}</div>
+              <div>{{ formatarDataHora(chamado.atualizadoEm) }}</div>
             </div>
             <div v-if="chamado.resolvidoEm" class="col-6 col-md-3">
               <div class="text-caption text-grey-7">Resolvido em</div>
-              <div>{{ formatar(chamado.resolvidoEm) }}</div>
+              <div>{{ formatarDataHora(chamado.resolvidoEm) }}</div>
             </div>
             <div v-if="chamado.fechadoEm" class="col-6 col-md-3">
               <div class="text-caption text-grey-7">Fechado em</div>
-              <div>{{ formatar(chamado.fechadoEm) }}</div>
+              <div>{{ formatarDataHora(chamado.fechadoEm) }}</div>
             </div>
           </q-card-section>
 
@@ -71,6 +71,7 @@
               :chamado="chamado"
               :perfil="auth.perfil"
               :usuario-id="auth.usuario?.id"
+              :processando="processandoAcao"
               @assumir="assumir"
               @alterar-status="alterarStatus"
             />
@@ -119,7 +120,8 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { date, useQuasar } from 'quasar'
+import { useQuasar } from 'quasar'
+import { formatarDataHora } from 'src/utils/formatacao'
 import StatusBadge from 'components/StatusBadge.vue'
 import PrioridadeBadge from 'components/PrioridadeBadge.vue'
 import ChamadoAcoes from 'components/ChamadoAcoes.vue'
@@ -134,12 +136,10 @@ const chamados = useChamadosStore()
 
 const novoComentario = ref('')
 const enviandoComentario = ref(false)
+/** Uma acao (assumir, alterar status) em voo: trava os botoes ate a resposta (FE-02). */
+const processandoAcao = ref(false)
 
 const chamado = computed(() => chamados.detalhe)
-
-function formatar(instante) {
-  return instante ? date.formatDate(new Date(instante), 'DD/MM/YYYY HH:mm') : '-'
-}
 
 watch(
   () => route.params.id,
@@ -153,14 +153,34 @@ watch(
 
 onUnmounted(() => chamados.limparDetalhe())
 
-async function assumir() {
-  await chamados.assumir(chamado.value.id)
-  $q.notify({ type: 'positive', message: 'Chamado assumido. Ele foi para EM ATENDIMENTO.' })
+/**
+ * Executa uma acao do chamado com os botoes travados ate a resposta.
+ *
+ * Erro de API ja vira notify no interceptor do api.js; aqui ele so e absorvido para nao
+ * virar "unhandled rejection" no handler do componente -- o mesmo `.catch(() => {})` que as
+ * paginas usam ao carregar dados (EXC-03).
+ */
+async function executarAcao(acao, mensagemDeSucesso) {
+  if (processandoAcao.value) return
+  processandoAcao.value = true
+  try {
+    await acao()
+    $q.notify({ type: 'positive', message: mensagemDeSucesso })
+  } catch {
+    // Ja notificado pelo interceptor.
+  } finally {
+    processandoAcao.value = false
+  }
 }
 
-async function alterarStatus(status) {
-  await chamados.alterarStatus(chamado.value.id, status)
-  $q.notify({ type: 'positive', message: `Chamado atualizado para ${status.replace('_', ' ')}.` })
+function assumir() {
+  return executarAcao(() => chamados.assumir(chamado.value.id),
+    'Chamado assumido. Ele foi para EM ATENDIMENTO.')
+}
+
+function alterarStatus(status) {
+  return executarAcao(() => chamados.alterarStatus(chamado.value.id, status),
+    `Chamado atualizado para ${status.replace('_', ' ')}.`)
 }
 
 async function comentar() {
@@ -168,6 +188,8 @@ async function comentar() {
   try {
     await chamados.comentar(chamado.value.id, novoComentario.value.trim())
     novoComentario.value = ''
+  } catch {
+    // Ja notificado pelo interceptor; o texto fica no campo para tentar de novo.
   } finally {
     enviandoComentario.value = false
   }

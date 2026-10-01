@@ -124,4 +124,6 @@ Adicionar qualquer item abaixo exige parar, reportar e aguardar decisão humana:
 | `http://localhost:8080/actuator/prometheus` | Métricas em formato Prometheus, incluindo as `helpdesk_*` |
 | `http://localhost:9000` | SPA |
 
-Em `prod` só `health` e `prometheus` ficam expostos; console H2 e Swagger são desligados.
+Sem perfil (`java -jar` puro) e em `prod` só `health` e `prometheus` ficam expostos; console H2,
+Swagger e o login simulado são desligados (ADR-021). O `mvn spring-boot:run` ativa o `dev`
+pelo `pom.xml`.

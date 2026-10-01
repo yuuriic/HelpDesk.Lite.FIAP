@@ -34,12 +34,12 @@
           </q-item-section>
 
           <q-item-section>
+            <!-- A rota publica de login nao traz e-mail (SEG-03): o perfil ja vai no badge. -->
             <q-item-label>{{ usuario.nome }}</q-item-label>
-            <q-item-label caption>{{ usuario.email }}</q-item-label>
           </q-item-section>
 
           <q-item-section side>
-            <q-badge :color="corDoPerfil(usuario.perfil)" :label="ROTULOS[usuario.perfil]" />
+            <q-badge :color="corDoPerfil(usuario.perfil)" :label="PERFIS[usuario.perfil]?.rotulo" />
           </q-item-section>
         </q-item>
       </q-list>
@@ -68,26 +68,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import SeletorTema from 'components/SeletorTema.vue'
 import { useAuthStore } from 'stores/auth'
+import { PERFIS } from 'src/constants/dominio'
 
 const $q = useQuasar()
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const ROTULOS = {
-  SOLICITANTE: 'Solicitante',
-  ATENDENTE: 'Atendente',
-  ADMIN: 'Admin'
-}
-
-const CORES = {
-  SOLICITANTE: 'blue-7',
-  ATENDENTE: 'teal-7',
-  ADMIN: 'purple-6'
-}
-
 function corDoPerfil(perfil) {
-  return CORES[perfil] ?? 'grey-7'
+  return PERFIS[perfil]?.cor ?? 'grey-7'
 }
 
 onMounted(() => {
@@ -96,7 +85,11 @@ onMounted(() => {
 })
 
 async function entrar(usuario) {
-  await auth.entrar(usuario.id)
-  router.push(route.query.destino || { name: 'chamados' })
+  try {
+    await auth.entrar(usuario.id)
+    router.push(route.query.destino || { name: 'chamados' })
+  } catch {
+    // Ja notificado pelo interceptor; continua na tela de login (EXC-03).
+  }
 }
 </script>

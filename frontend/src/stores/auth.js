@@ -77,6 +77,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Confere a sessao guardada no localStorage com o backend (SEG-08), pelo mesmo login que a
+   * tela de login usa. Atualiza nome e perfil se o admin os mudou desde o ultimo acesso. Se o
+   * usuario foi desativado, o 401 encerra a sessao pelo interceptor do api.js.
+   */
+  async function revalidarSessao() {
+    if (!usuario.value) {
+      return null
+    }
+    const { data } = await usuariosService.login(usuario.value.id)
+    usuario.value = data
+    definirUsuarioAtual(data.id)
+    guardarSessao(data)
+    return data
+  }
+
   function sair() {
     usuario.value = null
     definirUsuarioAtual(null)
@@ -96,6 +112,7 @@ export const useAuthStore = defineStore('auth', () => {
     podeGerenciarCadastros,
     carregarUsuariosDisponiveis,
     entrar,
+    revalidarSessao,
     sair
   }
 })

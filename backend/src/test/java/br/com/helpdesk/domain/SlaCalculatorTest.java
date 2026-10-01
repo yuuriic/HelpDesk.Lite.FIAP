@@ -2,7 +2,7 @@ package br.com.helpdesk.domain;
 
 import br.com.helpdesk.domain.enums.StatusChamado;
 import br.com.helpdesk.domain.model.Chamado;
-import br.com.helpdesk.service.SlaCalculator;
+import br.com.helpdesk.domain.sla.SlaCalculator;
 import br.com.helpdesk.support.CategoriaBuilder;
 import br.com.helpdesk.support.ChamadoBuilder;
 import br.com.helpdesk.support.Fixtures;
